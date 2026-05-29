@@ -14,7 +14,8 @@
 - Si `API_KEY` esta configurada, todas las peticiones deben incluir `x-api-key`.
 - Los endpoints conversacionales requieren ademas `x-user-id`.
 - `x-user-id` debe tener maximo 64 caracteres y solo puede usar letras, numeros, `_` y `-`.
-- Restringe `QDRANT_ALLOWED_COLLECTIONS` a las colecciones que pueda consultar esta API.
+- `vs_id_QDRANT` lo define el bloque y debe coincidir con el nombre exacto de una collection existente en Qdrant.
+- Si la collection indicada no existe, esta mal escrita o Qdrant no permite consultarla, la API devuelve `400`.
 - Ajusta `MAX_PROMPT_LENGTH`, `MAX_HISTORY_MESSAGES`, `MAX_CONVERSATION_TITLE_LENGTH`, `MAX_CONTEXT_CHARS`, `RATE_LIMIT_MAX` y `QDRANT_MAX_SCROLL_POINTS` segun el coste aceptable por peticion.
 
 ## Tutor legacy sin memoria

@@ -44,7 +44,6 @@ OPENAI_API_KEY=tu_api_key_aqui
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=tu_qdrant_key_si_tiene
 API_KEY=clave_para_consumir_esta_api
-QDRANT_ALLOWED_COLLECTIONS=vs_69d3542f0a848191aab05cbae571122a
 OPENAI_CHAT_MODEL=gpt-4o-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
@@ -248,15 +247,15 @@ Si la operacion se completa correctamente, devuelve `204 No Content`.
 ## Validaciones principales
 
 - `course id`, `curso`, `vs_id_QDRANT` y `x-user-id` son obligatorios en los endpoints que los requieren.
+- `vs_id_QDRANT` debe ser el nombre exacto de la collection existente en Qdrant y admite letras, numeros, `_` y `-`, con maximo de 128 caracteres.
 - `x-user-id` admite letras, numeros, `_` y `-`, con maximo de 64 caracteres.
 - `prompt` no puede estar vacio y esta limitado por `MAX_PROMPT_LENGTH`.
 - `title` esta limitado por `MAX_CONVERSATION_TITLE_LENGTH`.
-- Si `QDRANT_ALLOWED_COLLECTIONS` tiene valores, `vs_id_QDRANT` debe estar incluido en esa lista.
+- Si la collection indicada en `vs_id_QDRANT` no existe, esta mal escrita o Qdrant no permite consultarla, la API devuelve `400`.
 
 ## Seguridad operativa
 
 - Configura siempre `NODE_ENV=production` y `API_KEY` en produccion.
-- Restringe `QDRANT_ALLOWED_COLLECTIONS` a las colecciones permitidas.
 - Ajusta `RATE_LIMIT_MAX`, `MAX_CONTEXT_CHARS`, `MAX_HISTORY_MESSAGES` y `QDRANT_MAX_SCROLL_POINTS` segun el coste aceptable por peticion.
 - No subas `.env` al repositorio. Usa `.env.example` como plantilla.
 

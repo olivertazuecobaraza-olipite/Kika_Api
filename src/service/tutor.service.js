@@ -17,6 +17,52 @@ const MAX_CONTEXT_CHARS = Number(process.env.MAX_CONTEXT_CHARS || 18000);
 const VECTOR_LIMIT = Number(process.env.QDRANT_VECTOR_LIMIT || 3);
 const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
+const QDRANT_COLLECTION_ERROR_MESSAGE = 'La coleccion de Qdrant indicada no existe o no esta disponible.';
+
+const isMissingQdrantCollectionError = (err) => {
+    const status = err?.status || err?.statusCode || err?.response?.status;
+    const message = [
+        err?.message,
+        err?.data?.status?.error,
+        err?.response?.data?.status?.error,
+        err?.response?.data?.message
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    return status === 404
+        || message.includes('not found')
+        || message.includes('doesn\'t exist')
+        || message.includes('does not exist')
+        || message.includes('collection')
+            && (
+                message.includes('not exists')
+                || message.includes('not found')
+                || message.includes('doesn')
+            );
+};
+
+const createQdrantCollectionError = (vsIdQdrant, cause) => {
+    const error = new Error(QDRANT_COLLECTION_ERROR_MESSAGE);
+    error.name = 'QdrantCollectionError';
+    error.status = 400;
+    error.publicMessage = QDRANT_COLLECTION_ERROR_MESSAGE;
+    error.vsIdQdrant = vsIdQdrant;
+    error.cause = cause;
+    return error;
+};
+
+const searchQdrantCollection = async (vsIdQdrant, options) => {
+    try {
+        return await qdrant.search(vsIdQdrant, options);
+    } catch (err) {
+        if (isMissingQdrantCollectionError(err)) {
+            throw createQdrantCollectionError(vsIdQdrant, err);
+        }
+        throw err;
+    }
+};
 
 const normalizeHistory = (history) => {
     if (!Array.isArray(history)) return [];
@@ -252,7 +298,7 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
     });
     const [{ embedding }] = embeddingResponse.data;
 
-    const searchResult = await qdrant.search(vsIdQdrant, {
+    const searchResult = await searchQdrantCollection(vsIdQdrant, {
         vector: embedding,
         limit: VECTOR_LIMIT
     });

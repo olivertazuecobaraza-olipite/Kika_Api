@@ -36,7 +36,7 @@ export const askTutor = async (req, res) => {
             : 500;
         const respuestaError = statusCode === 500
             ? 'Error: No se pudo generar una respuesta en este momento.'
-            : 'Error: La solicitud no se pudo procesar.';
+            : `Error: ${error.publicMessage || 'La solicitud no se pudo procesar.'}`;
 
         res.status(statusCode).json({
             "course id": courseId,

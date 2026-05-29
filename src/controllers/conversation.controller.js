@@ -160,9 +160,16 @@ export const sendConversationMessage = async (req, res) => {
             { $set: { updatedAt: userMessage.createdAt, lastMessageAt: userMessage.createdAt } }
         );
 
-        res.status(500).json({
+        const statusCode = Number.isInteger(error.status) && error.status >= 400 && error.status < 500
+            ? error.status
+            : 500;
+        const respuestaError = statusCode === 500
+            ? 'Error: No se pudo generar una respuesta en este momento.'
+            : `Error: ${error.publicMessage || 'La solicitud no se pudo procesar.'}`;
+
+        res.status(statusCode).json({
             conversation_id: conversation._id.toString(),
-            respuesta: 'Error: No se pudo generar una respuesta en este momento.'
+            respuesta: respuestaError
         });
     }
 };

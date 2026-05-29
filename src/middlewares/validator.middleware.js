@@ -4,10 +4,6 @@ import mongoose from 'mongoose';
 
 const MAX_PROMPT_LENGTH = Number(process.env.MAX_PROMPT_LENGTH || 4000);
 const MAX_CONVERSATION_TITLE_LENGTH = Number(process.env.MAX_CONVERSATION_TITLE_LENGTH || 80);
-const allowedCollections = (process.env.QDRANT_ALLOWED_COLLECTIONS || '')
-    .split(',')
-    .map(collection => collection.trim())
-    .filter(Boolean);
 
 const courseValidators = () => [
     body('course id')
@@ -27,13 +23,7 @@ const courseValidators = () => [
         .trim()
         .notEmpty().withMessage('vs_id_QDRANT es requerido')
         .isLength({ max: 128 }).withMessage('vs_id_QDRANT no puede superar 128 caracteres')
-        .matches(/^[A-Za-z0-9_-]+$/).withMessage('vs_id_QDRANT contiene caracteres no permitidos')
-        .custom(value => {
-            if (allowedCollections.length > 0 && !allowedCollections.includes(value)) {
-                throw new Error('vs_id_QDRANT no esta permitido');
-            }
-            return true;
-        }),
+        .matches(/^[A-Za-z0-9_-]+$/).withMessage('vs_id_QDRANT contiene caracteres no permitidos'),
 ];
 
 const promptValidator = () => body('prompt')
