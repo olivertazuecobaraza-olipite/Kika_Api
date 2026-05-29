@@ -1,0 +1,9 @@
+express
+express-validator
+nodemon
+mongoose
+jsonwebtoken
+bcrypt
+dotenv
+openai
+@qdrant/js-client-rest

@@ -1,0 +1,531 @@
+{
+  "info": {
+    "name": "Kika API - Conversaciones con memoria",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 - Legacy",
+      "item": [
+        {
+          "name": "POST /api/tutor/ask - legacy sin memoria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('incluye respuesta', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('respuesta');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course id\": \"{{course_id}}\",\n  \"curso\": \"{{curso}}\",\n  \"vs_id_QDRANT\": \"{{vs_id_qdrant}}\",\n  \"prompt\": \"Cual es la secuencia basica que se debe seguir al cobrar con dinero efectivo?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/ask",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "ask"]
+            },
+            "description": "Comprueba que el endpoint legacy sigue funcionando sin x-user-id ni memoria."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 - Flujo completo conversaciones",
+      "item": [
+        {
+          "name": "POST /api/tutor/conversations - crear conversacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('guarda conversation_id', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('conversation_id');",
+                  "  pm.collectionVariables.set('conversation_id', json.conversation_id);",
+                  "});",
+                  "",
+                  "pm.test('usa titulo temporal', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.title).to.eql('Nueva conversación');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course id\": \"{{course_id}}\",\n  \"curso\": \"{{curso}}\",\n  \"vs_id_QDRANT\": \"{{vs_id_qdrant}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations"]
+            },
+            "description": "Crea una conversacion para {{user_id}} y guarda conversation_id automaticamente."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /messages - primer mensaje",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('incluye respuesta', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.conversation_id).to.eql(pm.collectionVariables.get('conversation_id'));",
+                  "  pm.expect(json.respuesta).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Cual es la secuencia basica para cobrar en efectivo?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "messages"]
+            },
+            "description": "Envia el primer mensaje. Tambien debe cambiar el titulo temporal por uno derivado del prompt."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /messages - seguimiento con memoria",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('incluye respuesta contextual', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.respuesta).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Explicame mejor el segundo paso.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "messages"]
+            },
+            "description": "Prueba una referencia anaforica que depende del historial."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /conversations - listar por curso",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('lista contiene la conversacion', function () {",
+                  "  const json = pm.response.json();",
+                  "  const id = pm.collectionVariables.get('conversation_id');",
+                  "  pm.expect(json.conversations).to.be.an('array');",
+                  "  pm.expect(json.conversations.some(c => c.conversation_id === id)).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations?course_id={{course_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations"],
+              "query": [
+                { "key": "course_id", "value": "{{course_id}}" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /messages - recuperar historial",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('devuelve mensajes en orden esperado', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.conversation_id).to.eql(pm.collectionVariables.get('conversation_id'));",
+                  "  pm.expect(json.messages).to.have.lengthOf.at.least(4);",
+                  "  pm.expect(json.messages[0].role).to.eql('user');",
+                  "  pm.expect(json.messages[1].role).to.eql('assistant');",
+                  "  pm.expect(json.messages[2].role).to.eql('user');",
+                  "  pm.expect(json.messages[3].role).to.eql('assistant');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "messages"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /conversations/:id - renombrar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('titulo actualizado', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.title).to.eql('Cobro en caja');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Cobro en caja\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Seguridad y validaciones",
+      "item": [
+        {
+          "name": "GET /messages con otro usuario - debe ser 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{other_user_id}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "messages"]
+            },
+            "description": "Verifica aislamiento entre usuarios por x-user-id."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /conversations sin x-user-id - debe ser 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course id\": \"{{course_id}}\",\n  \"curso\": \"{{curso}}\",\n  \"vs_id_QDRANT\": \"{{vs_id_qdrant}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /messages con prompt vacio - debe ser 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"   \"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "messages"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH con title vacio - debe ser 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Limpieza",
+      "item": [
+        {
+          "name": "DELETE /conversations/:id - borrar conversacion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', function () {",
+                  "  pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /messages despues de borrar - debe ser 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', function () {",
+                  "  pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "messages"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('base_url')) {",
+          "  pm.collectionVariables.set('base_url', 'http://localhost:3000');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
+    { "key": "api_key", "value": "clave_para_consumir_esta_api", "type": "string" },
+    { "key": "user_id", "value": "usuario_demo", "type": "string" },
+    { "key": "other_user_id", "value": "usuario_b", "type": "string" },
+    { "key": "conversation_id", "value": "", "type": "string" },
+    { "key": "course_id", "value": "790", "type": "string" },
+    { "key": "curso", "value": "COMT013PO", "type": "string" },
+    { "key": "vs_id_qdrant", "value": "vs_69d3542f0a848191aab05cbae571122a", "type": "string" }
+  ]
+}
