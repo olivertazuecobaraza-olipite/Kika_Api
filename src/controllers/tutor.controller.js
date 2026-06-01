@@ -9,16 +9,18 @@ const persistInteraction = (data) => {
 };
 
 export const askTutor = async (req, res) => {
-    const { "course id": courseId, curso, vs_id_QDRANT: vsIdQdrant, prompt } = req.body;
+    const { "course id": courseId, curso, vs_id_QDRANT: vsIdQdrant, prompt, web_search: webSearch } = req.body;
 
     try {
-        const respuestaText = await getTutorResponse({ curso, vsIdQdrant, prompt });
+        const tutorResponse = await getTutorResponse({ curso, vsIdQdrant, prompt, webSearch });
 
         res.status(200).json({
             "course id": courseId,
             "curso": curso,
             "vs_id_qdrant": vsIdQdrant,
-            "respuesta": respuestaText
+            "respuesta": tutorResponse.respuesta,
+            "web_search_used": tutorResponse.webSearchUsed,
+            "fuentes": tutorResponse.sources
         });
 
         persistInteraction({
@@ -26,7 +28,9 @@ export const askTutor = async (req, res) => {
             curso,
             vsIdQdrant,
             prompt,
-            respuesta: respuestaText
+            respuesta: tutorResponse.respuesta,
+            webSearchUsed: tutorResponse.webSearchUsed,
+            sources: tutorResponse.sources
         });
     } catch (error) {
         console.error('Error en el agente Tutor:', error);
@@ -42,7 +46,9 @@ export const askTutor = async (req, res) => {
             "course id": courseId,
             "curso": curso,
             "vs_id_qdrant": vsIdQdrant,
-            "respuesta": respuestaError
+            "respuesta": respuestaError,
+            "web_search_used": false,
+            "fuentes": []
         });
 
         persistInteraction({

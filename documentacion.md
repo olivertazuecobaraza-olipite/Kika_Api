@@ -17,6 +17,7 @@
 - `vs_id_QDRANT` lo define el bloque y debe coincidir con el nombre exacto de una collection existente en Qdrant.
 - Si la collection indicada no existe, esta mal escrita o Qdrant no permite consultarla, la API devuelve `400`.
 - Ajusta `MAX_PROMPT_LENGTH`, `MAX_HISTORY_MESSAGES`, `MAX_CONVERSATION_TITLE_LENGTH`, `MAX_CONTEXT_CHARS`, `RATE_LIMIT_MAX` y `QDRANT_MAX_SCROLL_POINTS` segun el coste aceptable por peticion.
+- Configura `PERPLEXITY_API_KEY` para habilitar busquedas web. Si no esta definida, el tutor documental sigue funcionando.
 
 ## Tutor legacy sin memoria
 
@@ -28,6 +29,20 @@
   "curso": "COMT013PO",
   "vs_id_QDRANT": "vs_69d3542f0a848191aab05cbae571122a",
   "prompt": "Cual es la secuencia basica para cobrar en efectivo?"
+}
+```
+
+La busqueda web se activa si `prompt` contiene la frase `Busca en internet` o si
+la peticion incluye `"web_search": true`. El booleano es opcional y permite que
+el frontend incorpore un boton sin modificar el texto escrito por el usuario.
+
+```json
+{
+  "course id": "790",
+  "curso": "COMT013PO",
+  "vs_id_QDRANT": "vs_69d3542f0a848191aab05cbae571122a",
+  "prompt": "Cuales son las novedades recientes sobre este tema?",
+  "web_search": true
 }
 ```
 
@@ -56,11 +71,12 @@ Si no se envia `title`, se usa `Nueva conversación` y se sustituye por un titul
 
 ```json
 {
-  "prompt": "Explicame mejor el segundo paso."
+  "prompt": "Explicame mejor el segundo paso.",
+  "web_search": false
 }
 ```
 
-La respuesta incluye `conversation_id` y `respuesta`. El tutor carga los ultimos `MAX_HISTORY_MESSAGES` mensajes previos, en orden cronologico, para resolver referencias como "eso" o "el segundo paso". Qdrant sigue siendo la fuente documental principal.
+La respuesta incluye `conversation_id`, `respuesta`, `web_search_used` y `fuentes`. El tutor carga los ultimos `MAX_HISTORY_MESSAGES` mensajes previos, en orden cronologico, para resolver referencias como "eso" o "el segundo paso". Qdrant sigue siendo la fuente documental principal. Cuando se activa la busqueda web, Perplexity Sonar complementa ese contexto, devuelve la respuesta final y aporta enlaces estructurados.
 
 ### Listar conversaciones
 
@@ -75,6 +91,8 @@ Opcionalmente filtra por curso:
 `GET /api/tutor/conversations/:conversationId/messages`
 
 Devuelve los mensajes ordenados de mas antiguo a mas reciente.
+Cada mensaje incluye `web_search_used` y `fuentes`, por lo que las referencias web
+siguen disponibles al recargar una conversacion.
 
 ### Renombrar conversacion
 

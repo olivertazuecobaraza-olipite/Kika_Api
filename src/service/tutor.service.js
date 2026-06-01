@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { openai } from '../config/openai.js';
+import { perplexity } from '../config/perplexity.js';
 import { qdrant } from '../config/qdrant.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +18,88 @@ const MAX_CONTEXT_CHARS = Number(process.env.MAX_CONTEXT_CHARS || 18000);
 const VECTOR_LIMIT = Number(process.env.QDRANT_VECTOR_LIMIT || 3);
 const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
+const PERPLEXITY_MODEL = process.env.PERPLEXITY_MODEL || 'sonar';
 const QDRANT_COLLECTION_ERROR_MESSAGE = 'La coleccion de Qdrant indicada no existe o no esta disponible.';
+const WEB_SEARCH_TRIGGER_REGEX = /\bbusca\s+en\s+internet\b/gi;
+const WEB_SEARCH_TRIGGER_TEST_REGEX = /\bbusca\s+en\s+internet\b/i;
+const EMPTY_WEB_SEARCH_PROMPT_MESSAGE = 'La consulta no puede contener unicamente la instruccion de buscar en internet.';
+const WEB_SEARCH_NOT_CONFIGURED_MESSAGE = 'La busqueda en internet no esta configurada.';
+const WEB_SEARCH_UNAVAILABLE_MESSAGE = 'La busqueda en internet no esta disponible en este momento.';
+
+const createPublicError = ({ name, status, publicMessage, cause }) => {
+    const error = new Error(publicMessage);
+    error.name = name;
+    error.status = status;
+    error.publicMessage = publicMessage;
+    error.cause = cause;
+    return error;
+};
+
+export const cleanWebSearchTrigger = (prompt) => prompt
+    .replace(WEB_SEARCH_TRIGGER_REGEX, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export const shouldUseWebSearch = ({ prompt, webSearch = false }) => (
+    webSearch === true || WEB_SEARCH_TRIGGER_TEST_REGEX.test(prompt)
+);
+
+const isHttpUrl = (value) => {
+    try {
+        const url = new URL(value);
+        return ['http:', 'https:'].includes(url.protocol);
+    } catch {
+        return false;
+    }
+};
+
+const escapeHtml = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+export const normalizeWebSources = ({ citations = [], searchResults = [] } = {}) => {
+    const resultsByUrl = new Map(
+        searchResults
+            .filter(result => isHttpUrl(result?.url))
+            .map(result => [result.url, result])
+    );
+    const candidateUrls = [
+        ...citations,
+        ...searchResults.map(result => result?.url)
+    ];
+    const sourcesByUrl = new Map();
+
+    candidateUrls.forEach(url => {
+        if (!isHttpUrl(url) || sourcesByUrl.has(url)) return;
+
+        const result = resultsByUrl.get(url) || {};
+        sourcesByUrl.set(url, {
+            titulo: result.title || url,
+            url,
+            fecha: result.date || result.last_updated || ''
+        });
+    });
+
+    return [...sourcesByUrl.values()];
+};
+
+export const appendWebSourcesHtml = (responseHtml, sources) => {
+    if (sources.length === 0) return responseHtml;
+
+    const items = sources
+        .map(source => {
+            const title = escapeHtml(source.titulo);
+            const url = escapeHtml(source.url);
+            const date = source.fecha ? ` <span>${escapeHtml(source.fecha)}</span>` : '';
+            return `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>${date}</li>`;
+        })
+        .join('');
+
+    return `${responseHtml}<section><h3>Fuentes de internet</h3><ul>${items}</ul></section>`;
+};
 
 const isMissingQdrantCollectionError = (err) => {
     const status = err?.status || err?.statusCode || err?.response?.status;
@@ -71,8 +153,11 @@ const normalizeHistory = (history) => {
         .filter(message => ['user', 'assistant'].includes(message?.role) && typeof message?.content === 'string')
         .map(message => ({
             role: message.role,
-            content: message.content
-        }));
+            content: message.role === 'user'
+                ? cleanWebSearchTrigger(message.content)
+                : message.content
+        }))
+        .filter(message => message.content);
 };
 
 const isRealHeading = (title, num) => {
@@ -291,10 +376,81 @@ const getInstructions = async ({ curso, context }) => {
         .replace(/{context}/g, context);
 };
 
-export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = [] }) => {
+const getWebInstructions = async ({ curso, context }) => {
+    const instructions = await getInstructions({ curso, context });
+    return `${instructions}
+
+BUSQUEDA EXTERNA ACTIVADA
+
+Debes complementar el contexto oficial con una busqueda en internet.
+Indica claramente que informacion procede de internet y cual procede del contexto oficial.
+Responde exclusivamente con HTML valido, sin Markdown.
+No anadas una seccion de fuentes: el sistema la incorporara automaticamente.`;
+};
+
+export const getWebResponse = async ({ curso, context, prompt, history = [], perplexityClient = perplexity }) => {
+    if (!perplexityClient) {
+        throw createPublicError({
+            name: 'WebSearchConfigurationError',
+            status: 503,
+            publicMessage: WEB_SEARCH_NOT_CONFIGURED_MESSAGE
+        });
+    }
+
+    try {
+        const chatCompletion = await perplexityClient.chat.completions.create({
+            model: PERPLEXITY_MODEL,
+            messages: [
+                { role: 'system', content: await getWebInstructions({ curso, context }) },
+                ...history,
+                { role: 'user', content: prompt }
+            ]
+        });
+        const sources = normalizeWebSources({
+            citations: chatCompletion.citations,
+            searchResults: chatCompletion.search_results
+        });
+        const responseHtml = chatCompletion.choices[0]?.message?.content || 'No pude generar una respuesta.';
+
+        return {
+            respuesta: appendWebSourcesHtml(responseHtml, sources),
+            webSearchUsed: true,
+            sources
+        };
+    } catch (err) {
+        if (err?.status === 503 && err?.name === 'WebSearchConfigurationError') throw err;
+
+        console.error('[TutorService] Error al consultar Perplexity Sonar:', err);
+        throw createPublicError({
+            name: 'WebSearchProviderError',
+            status: 502,
+            publicMessage: WEB_SEARCH_UNAVAILABLE_MESSAGE,
+            cause: err
+        });
+    }
+};
+
+export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = [], webSearch = false }) => {
+    const webSearchUsed = shouldUseWebSearch({ prompt, webSearch });
+    const cleanPrompt = cleanWebSearchTrigger(prompt);
+    if (!cleanPrompt) {
+        throw createPublicError({
+            name: 'EmptyWebSearchPromptError',
+            status: 400,
+            publicMessage: EMPTY_WEB_SEARCH_PROMPT_MESSAGE
+        });
+    }
+    if (webSearchUsed && !perplexity) {
+        throw createPublicError({
+            name: 'WebSearchConfigurationError',
+            status: 503,
+            publicMessage: WEB_SEARCH_NOT_CONFIGURED_MESSAGE
+        });
+    }
+
     const embeddingResponse = await openai.embeddings.create({
         model: EMBEDDING_MODEL,
-        input: prompt
+        input: cleanPrompt
     });
     const [{ embedding }] = embeddingResponse.data;
 
@@ -305,24 +461,36 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
 
     let explicitPages = [];
     try {
-        explicitPages = await getExplicitContextPages({ vsIdQdrant, prompt });
+        explicitPages = await getExplicitContextPages({ vsIdQdrant, prompt: cleanPrompt });
     } catch (err) {
         console.error('[TutorService] Error al intentar recuperar contexto determinista:', err);
     }
 
     const context = buildContext({ explicitPages, searchResult });
-    const systemInstruction = await getInstructions({ curso, context });
     const normalizedHistory = normalizeHistory(history);
+    if (webSearchUsed) {
+        return getWebResponse({
+            curso,
+            context,
+            prompt: cleanPrompt,
+            history: normalizedHistory
+        });
+    }
 
+    const systemInstruction = await getInstructions({ curso, context });
     const chatCompletion = await openai.chat.completions.create({
         model: CHAT_MODEL,
         messages: [
             { role: 'system', content: systemInstruction },
             ...normalizedHistory,
-            { role: 'user', content: prompt }
+            { role: 'user', content: cleanPrompt }
         ],
         temperature: 0.4
     });
 
-    return chatCompletion.choices[0].message.content || 'No pude generar una respuesta.';
+    return {
+        respuesta: chatCompletion.choices[0].message.content || 'No pude generar una respuesta.',
+        webSearchUsed: false,
+        sources: []
+    };
 };

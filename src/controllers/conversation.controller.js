@@ -1,6 +1,6 @@
 import { Conversation } from '../models/conversation.model.js';
 import { Message } from '../models/message.model.js';
-import { getTutorResponse } from '../service/tutor.service.js';
+import { cleanWebSearchTrigger, getTutorResponse } from '../service/tutor.service.js';
 
 const DEFAULT_TITLE = 'Nueva conversación';
 const MAX_HISTORY_MESSAGES = Number(process.env.MAX_HISTORY_MESSAGES || 12);
@@ -23,7 +23,7 @@ const serializeConversation = (conversation) => ({
 });
 
 const buildTitleFromPrompt = (prompt) => {
-    const normalized = prompt.replace(/\s+/g, ' ').trim();
+    const normalized = cleanWebSearchTrigger(prompt);
     if (!normalized) return DEFAULT_TITLE;
     return normalized.length > MAX_CONVERSATION_TITLE_LENGTH
         ? normalized.slice(0, MAX_CONVERSATION_TITLE_LENGTH).trim()
@@ -85,6 +85,8 @@ export const getConversationMessages = async (req, res) => {
         messages: messages.map(message => ({
             role: message.role,
             content: message.content,
+            web_search_used: message.webSearchUsed || false,
+            fuentes: message.sources || [],
             created_at: message.createdAt
         }))
     });
@@ -93,7 +95,7 @@ export const getConversationMessages = async (req, res) => {
 export const sendConversationMessage = async (req, res) => {
     const userId = getUserId(req);
     const { conversationId } = req.params;
-    const { prompt } = req.body;
+    const { prompt, web_search: webSearch } = req.body;
     const conversation = await Conversation.findOne({ _id: conversationId, userId });
 
     if (!conversation) {
@@ -122,17 +124,20 @@ export const sendConversationMessage = async (req, res) => {
                 content: message.content
             }));
 
-        const respuesta = await getTutorResponse({
+        const tutorResponse = await getTutorResponse({
             curso: conversation.curso,
             vsIdQdrant: conversation.vsIdQdrant,
             prompt,
-            history
+            history,
+            webSearch
         });
 
         const assistantMessage = await Message.create({
             conversationId: conversation._id,
             role: 'assistant',
-            content: respuesta
+            content: tutorResponse.respuesta,
+            webSearchUsed: tutorResponse.webSearchUsed,
+            sources: tutorResponse.sources
         });
 
         const updates = {
@@ -151,7 +156,9 @@ export const sendConversationMessage = async (req, res) => {
 
         res.status(200).json({
             conversation_id: conversation._id.toString(),
-            respuesta
+            respuesta: tutorResponse.respuesta,
+            web_search_used: tutorResponse.webSearchUsed,
+            fuentes: tutorResponse.sources
         });
     } catch (error) {
         console.error('Error en conversacion del agente Tutor:', error);
@@ -169,7 +176,9 @@ export const sendConversationMessage = async (req, res) => {
 
         res.status(statusCode).json({
             conversation_id: conversation._id.toString(),
-            respuesta: respuestaError
+            respuesta: respuestaError,
+            web_search_used: false,
+            fuentes: []
         });
     }
 };

@@ -32,6 +32,10 @@ const promptValidator = () => body('prompt')
     .notEmpty().withMessage('El prompt no puede estar vacio')
     .isLength({ max: MAX_PROMPT_LENGTH }).withMessage(`El prompt no puede superar ${MAX_PROMPT_LENGTH} caracteres`);
 
+const optionalWebSearchValidator = () => body('web_search')
+    .optional()
+    .isBoolean().withMessage('web_search debe ser booleano');
+
 const optionalTitleValidator = () => body('title')
     .optional()
     .isString().withMessage('title debe ser texto')
@@ -72,6 +76,7 @@ const sendValidationErrors = (req, res, next) => {
 export const validateTutorRequest = [
     ...courseValidators(),
     promptValidator(),
+    optionalWebSearchValidator(),
     sendValidationErrors
 ];
 
@@ -104,6 +109,7 @@ export const validateConversationMessage = [
     userIdValidator(),
     conversationIdValidator(),
     promptValidator(),
+    optionalWebSearchValidator(),
     sendValidationErrors
 ];
 

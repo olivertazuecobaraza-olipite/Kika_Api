@@ -22,6 +22,8 @@
                   "pm.test('incluye respuesta', function () {",
                   "  const json = pm.response.json();",
                   "  pm.expect(json).to.have.property('respuesta');",
+                  "  pm.expect(json.web_search_used).to.eql(false);",
+                  "  pm.expect(json.fuentes).to.be.an('array').that.is.empty;",
                   "});"
                 ]
               }
@@ -44,6 +46,48 @@
               "path": ["api", "tutor", "ask"]
             },
             "description": "Comprueba que el endpoint legacy sigue funcionando sin x-user-id ni memoria."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/tutor/ask - busqueda web con Perplexity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('incluye fuentes web', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.respuesta).to.be.a('string').and.not.empty;",
+                  "  pm.expect(json.web_search_used).to.eql(true);",
+                  "  pm.expect(json.fuentes).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"course id\": \"{{course_id}}\",\n  \"curso\": \"{{curso}}\",\n  \"vs_id_QDRANT\": \"{{vs_id_qdrant}}\",\n  \"prompt\": \"Cuales son las novedades recientes sobre medios de pago?\",\n  \"web_search\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/ask",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "ask"]
+            },
+            "description": "Activa Perplexity Sonar mediante el booleano opcional web_search."
           },
           "response": []
         }

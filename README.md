@@ -9,6 +9,7 @@ API de tutor conversacional para cursos. Recibe preguntas de estudiantes, recupe
 - Separacion de conversaciones por cabecera `x-user-id`.
 - Recuperacion de contexto documental desde Qdrant.
 - Generacion de respuestas con OpenAI.
+- Busqueda web opcional mediante Perplexity Sonar.
 - Persistencia de interacciones, conversaciones y mensajes en MongoDB.
 - Validacion de entradas, autenticacion opcional por API key, rate limiting y cabeceras de seguridad.
 
@@ -46,6 +47,8 @@ QDRANT_API_KEY=tu_qdrant_key_si_tiene
 API_KEY=clave_para_consumir_esta_api
 OPENAI_CHAT_MODEL=gpt-4o-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+PERPLEXITY_API_KEY=tu_api_key_de_perplexity_aqui
+PERPLEXITY_MODEL=sonar
 ```
 
 En produccion, `API_KEY` es obligatoria. Si esta configurada, todas las peticiones deben incluir la cabecera:
@@ -117,9 +120,28 @@ Respuesta:
   "course id": "790",
   "curso": "COMT013PO",
   "vs_id_qdrant": "vs_69d3542f0a848191aab05cbae571122a",
-  "respuesta": "<section>...</section>"
+  "respuesta": "<section>...</section>",
+  "web_search_used": false,
+  "fuentes": []
 }
 ```
+
+Para complementar la documentacion interna con una busqueda web, incluye la frase
+`Busca en internet` dentro de `prompt` o envia `web_search: true`. La frase se
+mantiene por compatibilidad y el booleano permite integrar un boton en el frontend:
+
+```json
+{
+  "course id": "790",
+  "curso": "COMT013PO",
+  "vs_id_QDRANT": "vs_69d3542f0a848191aab05cbae571122a",
+  "prompt": "Cuales son las novedades recientes sobre este tema?",
+  "web_search": true
+}
+```
+
+Las respuestas web incluyen `web_search_used: true`, una seccion HTML con enlaces
+y el array estructurado `fuentes`.
 
 ### Crear conversacion
 
@@ -177,7 +199,9 @@ Respuesta:
 ```json
 {
   "conversation_id": "66583f4c2a0d4b98e1e0a111",
-  "respuesta": "<section>...</section>"
+  "respuesta": "<section>...</section>",
+  "web_search_used": false,
+  "fuentes": []
 }
 ```
 
@@ -250,6 +274,7 @@ Si la operacion se completa correctamente, devuelve `204 No Content`.
 - `vs_id_QDRANT` debe ser el nombre exacto de la collection existente en Qdrant y admite letras, numeros, `_` y `-`, con maximo de 128 caracteres.
 - `x-user-id` admite letras, numeros, `_` y `-`, con maximo de 64 caracteres.
 - `prompt` no puede estar vacio y esta limitado por `MAX_PROMPT_LENGTH`.
+- `web_search`, cuando se envia, debe ser booleano.
 - `title` esta limitado por `MAX_CONVERSATION_TITLE_LENGTH`.
 - Si la collection indicada en `vs_id_QDRANT` no existe, esta mal escrita o Qdrant no permite consultarla, la API devuelve `400`.
 
@@ -261,4 +286,4 @@ Si la operacion se completa correctamente, devuelve `204 No Content`.
 
 ## Respuestas del tutor
 
-El tutor responde en espanol y devuelve fragmentos HTML validos, no Markdown. Las respuestas se basan exclusivamente en el contexto oficial recuperado desde Qdrant. Si la informacion no aparece en el material del curso, la API debe indicarlo sin inventar contenido.
+El tutor devuelve fragmentos HTML validos, no Markdown, y responde en el idioma de la consulta. Por defecto, las respuestas se basan exclusivamente en el contexto oficial recuperado desde Qdrant. Si se activa la busqueda web mediante `web_search: true` o la frase `Busca en internet`, Perplexity Sonar complementa ese contexto con informacion externa y la respuesta identifica sus fuentes.
