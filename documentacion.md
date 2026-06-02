@@ -10,14 +10,28 @@
 
 ## Seguridad operativa
 
-- En produccion define siempre `NODE_ENV=production` y `API_KEY`.
-- Si `API_KEY` esta configurada, todas las peticiones deben incluir `x-api-key`.
+- En produccion define siempre `NODE_ENV=production` y configura `AUTH_MODE`.
+- `AUTH_MODE=legacy` acepta `x-api-key`, `hybrid` acepta JWT Bearer o `x-api-key`,
+  y `jwt` acepta exclusivamente `Authorization: Bearer <token>`.
+- Usa `legacy` al desplegar el cambio, `hybrid` durante la migracion y `jwt`
+  cuando todos los clientes consuman tokens expirables.
+- Los JWT usan firma `RS256`, incluyen `iss`, `aud`, `sub`, `iat`, `exp`, `jti`
+  y `kid`, y no pueden superar 12 meses de vida.
+- `sub` identifica a la aplicacion consumidora; no sustituye a `x-user-id`.
+- `jti` identifica el token concreto. Debe existir como licencia activa en
+  `kika_issued_tokens` y permite revocarlo mediante `kika_revoked_tokens`.
 - Los endpoints conversacionales requieren ademas `x-user-id`.
 - `x-user-id` debe tener maximo 64 caracteres y solo puede usar letras, numeros, `_` y `-`.
 - `vs_id_QDRANT` lo define el bloque y debe coincidir con el nombre exacto de una collection existente en Qdrant.
 - Si la collection indicada no existe, esta mal escrita o Qdrant no permite consultarla, la API devuelve `400`.
 - Ajusta `MAX_PROMPT_LENGTH`, `MAX_HISTORY_MESSAGES`, `MAX_CONVERSATION_TITLE_LENGTH`, `MAX_CONTEXT_CHARS`, `RATE_LIMIT_MAX` y `QDRANT_MAX_SCROLL_POINTS` segun el coste aceptable por peticion.
 - Configura `PERPLEXITY_API_KEY` para habilitar busquedas web. Si no esta definida, el tutor documental sigue funcionando.
+
+## Gestion privada de licencias
+
+La API solo verifica tokens registrados como licencias activas. Las operaciones
+de emision, renovacion, revocacion y rotacion se describen en
+`OPERACION_PRIVADA.md` y deben ejecutarse exclusivamente por el administrador.
 
 ## Tutor legacy sin memoria
 

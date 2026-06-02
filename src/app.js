@@ -5,6 +5,7 @@ import { validateEnv } from './config/env.js';
 import { connectDB } from './config/db.js';
 import tutorRoutes from './routes/tutor.routes.js';
 import { requireApiKey } from './middlewares/auth.middleware.js';
+import { auditAuthenticatedRequest } from './middlewares/auth-audit.middleware.js';
 import { rateLimit } from './middlewares/rate-limit.middleware.js';
 import { securityHeaders } from './middlewares/security-headers.middleware.js';
 
@@ -17,7 +18,7 @@ app.use(securityHeaders);
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '32kb' }));
 
 // Montar Rutas de la API
-app.use('/api/tutor', rateLimit, requireApiKey, tutorRoutes);
+app.use('/api/tutor', rateLimit, requireApiKey, auditAuthenticatedRequest, tutorRoutes);
 
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {

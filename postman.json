@@ -33,7 +33,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" }
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
             ],
             "body": {
               "mode": "raw",
@@ -75,7 +75,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" }
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
             ],
             "body": {
               "mode": "raw",
@@ -126,7 +126,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "body": {
@@ -168,7 +168,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "body": {
@@ -209,7 +209,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "body": {
@@ -251,7 +251,7 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "url": {
@@ -293,7 +293,7 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "url": {
@@ -328,7 +328,7 @@
             "method": "PATCH",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "body": {
@@ -367,7 +367,7 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{other_user_id}}", "type": "text" }
             ],
             "url": {
@@ -398,7 +398,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" }
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
             ],
             "body": {
               "mode": "raw",
@@ -432,7 +432,7 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "body": {
@@ -467,7 +467,7 @@
             "method": "PATCH",
             "header": [
               { "key": "Content-Type", "value": "application/json", "type": "text" },
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "body": {
@@ -506,7 +506,7 @@
           "request": {
             "method": "DELETE",
             "header": [
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "url": {
@@ -535,7 +535,7 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "x-api-key", "value": "{{api_key}}", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
               { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
             ],
             "url": {
@@ -564,7 +564,8 @@
   ],
   "variable": [
     { "key": "base_url", "value": "http://localhost:3000", "type": "string" },
-    { "key": "api_key", "value": "clave_para_consumir_esta_api", "type": "string" },
+    { "key": "api_token", "value": "", "type": "string" },
+    { "key": "api_key", "value": "clave_estatica_solo_para_transicion", "type": "string" },
     { "key": "user_id", "value": "usuario_demo", "type": "string" },
     { "key": "other_user_id", "value": "usuario_b", "type": "string" },
     { "key": "conversation_id", "value": "", "type": "string" },

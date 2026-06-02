@@ -11,7 +11,7 @@ API de tutor conversacional para cursos. Recibe preguntas de estudiantes, recupe
 - Generacion de respuestas con OpenAI.
 - Busqueda web opcional mediante Perplexity Sonar.
 - Persistencia de interacciones, conversaciones y mensajes en MongoDB.
-- Validacion de entradas, autenticacion opcional por API key, rate limiting y cabeceras de seguridad.
+- Validacion de entradas, autenticacion JWT expirable con migracion desde API key, rate limiting y cabeceras de seguridad.
 
 ## Requisitos
 
@@ -44,17 +44,29 @@ MONGO_URI=mongodb://localhost:2017/tutor_db
 OPENAI_API_KEY=tu_api_key_aqui
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=tu_qdrant_key_si_tiene
-API_KEY=clave_para_consumir_esta_api
+AUTH_MODE=legacy
+API_KEY=clave_estatica_solo_para_transicion
+JWT_ISSUER=kika-token-service
+JWT_AUDIENCE=kika-api
+JWT_MAX_TTL_SECONDS=31622400
+JWT_CLOCK_TOLERANCE_SECONDS=30
+JWT_PUBLIC_KEYS_JSON={"kika-2026-01":"<clave_publica_pem_codificada_en_base64>"}
 OPENAI_CHAT_MODEL=gpt-4o-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 PERPLEXITY_API_KEY=tu_api_key_de_perplexity_aqui
 PERPLEXITY_MODEL=sonar
 ```
 
-En produccion, `API_KEY` es obligatoria. Si esta configurada, todas las peticiones deben incluir la cabecera:
+La autenticacion se migra gradualmente mediante `AUTH_MODE`:
+
+- `legacy`: solo acepta `x-api-key`.
+- `hybrid`: acepta JWT Bearer y temporalmente `x-api-key`.
+- `jwt`: solo acepta JWT Bearer.
+
+El contrato objetivo para todas las peticiones es:
 
 ```http
-x-api-key: clave_para_consumir_esta_api
+Authorization: Bearer <token>
 ```
 
 Los endpoints conversacionales requieren ademas:
@@ -62,6 +74,19 @@ Los endpoints conversacionales requieren ademas:
 ```http
 x-user-id: usuario_123
 ```
+
+El JWT identifica a la aplicacion consumidora mediante `sub`. La cabecera
+`x-user-id` sigue identificando al usuario final y separando sus conversaciones.
+Cada token incluye un `jti` unico para permitir su revocacion anticipada.
+
+## Uso del token
+
+Cada cliente recibe una credencial individual por un canal privado. El token
+debe tratarse como un secreto y no debe incluirse en repositorios, tickets
+publicos ni capturas compartidas.
+
+Si el token caduca o se filtra, solicita una renovacion al administrador de la
+API. Los clientes no generan ni renuevan tokens por su cuenta.
 
 ## Ejecucion
 
@@ -104,7 +129,7 @@ Ejemplo:
 ```bash
 curl -X POST http://localhost:3000/api/tutor/ask \
   -H "Content-Type: application/json" \
-  -H "x-api-key: clave_para_consumir_esta_api" \
+  -H "Authorization: Bearer <token>" \
   -d '{
     "course id": "790",
     "curso": "COMT013PO",
@@ -154,7 +179,7 @@ Ejemplo:
 ```bash
 curl -X POST http://localhost:3000/api/tutor/conversations \
   -H "Content-Type: application/json" \
-  -H "x-api-key: clave_para_consumir_esta_api" \
+  -H "Authorization: Bearer <token>" \
   -H "x-user-id: usuario_123" \
   -d '{
     "course id": "790",
@@ -187,7 +212,7 @@ Ejemplo:
 ```bash
 curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/messages \
   -H "Content-Type: application/json" \
-  -H "x-api-key: clave_para_consumir_esta_api" \
+  -H "Authorization: Bearer <token>" \
   -H "x-user-id: usuario_123" \
   -d '{
     "prompt": "Explicame mejor el segundo paso."
@@ -216,7 +241,7 @@ Ejemplo:
 
 ```bash
 curl http://localhost:3000/api/tutor/conversations \
-  -H "x-api-key: clave_para_consumir_esta_api" \
+  -H "Authorization: Bearer <token>" \
   -H "x-user-id: usuario_123"
 ```
 
@@ -230,7 +255,7 @@ Ejemplo:
 
 ```bash
 curl http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/messages \
-  -H "x-api-key: clave_para_consumir_esta_api" \
+  -H "Authorization: Bearer <token>" \
   -H "x-user-id: usuario_123"
 ```
 
@@ -245,7 +270,7 @@ Ejemplo:
 ```bash
 curl -X PATCH http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111 \
   -H "Content-Type: application/json" \
-  -H "x-api-key: clave_para_consumir_esta_api" \
+  -H "Authorization: Bearer <token>" \
   -H "x-user-id: usuario_123" \
   -d '{
     "title": "Cobro en efectivo"
@@ -262,7 +287,7 @@ Ejemplo:
 
 ```bash
 curl -X DELETE http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111 \
-  -H "x-api-key: clave_para_consumir_esta_api" \
+  -H "Authorization: Bearer <token>" \
   -H "x-user-id: usuario_123"
 ```
 
@@ -280,7 +305,12 @@ Si la operacion se completa correctamente, devuelve `204 No Content`.
 
 ## Seguridad operativa
 
-- Configura siempre `NODE_ENV=production` y `API_KEY` en produccion.
+- Configura siempre `NODE_ENV=production` y el modo de autenticacion apropiado.
+- Despliega primero con `AUTH_MODE=legacy`, migra clientes con `AUTH_MODE=hybrid`
+  y retira `API_KEY` tras cambiar a `AUTH_MODE=jwt`.
+- Para rotar claves, anade primero el nuevo `kid`, empieza a emitir con el y
+  retira el anterior cuando sus tokens hayan expirado o hayan sido revocados.
+- Retirar un `kid` invalida inmediatamente todos sus tokens.
 - Ajusta `RATE_LIMIT_MAX`, `MAX_CONTEXT_CHARS`, `MAX_HISTORY_MESSAGES` y `QDRANT_MAX_SCROLL_POINTS` segun el coste aceptable por peticion.
 - No subas `.env` al repositorio. Usa `.env.example` como plantilla.
 

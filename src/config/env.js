@@ -1,3 +1,5 @@
+import { parseAuthConfig } from './auth.js';
+
 const requiredEnvVars = [
     'MONGO_URI',
     'OPENAI_API_KEY',
@@ -11,7 +13,12 @@ export const validateEnv = () => {
         throw new Error(`Faltan variables de entorno requeridas: ${missingVars.join(', ')}`);
     }
 
-    if (process.env.NODE_ENV === 'production' && !process.env.API_KEY) {
+    const authConfig = parseAuthConfig();
+    if (
+        process.env.NODE_ENV === 'production'
+        && (authConfig.mode === 'legacy' || authConfig.mode === 'hybrid')
+        && !process.env.API_KEY
+    ) {
         throw new Error('API_KEY es requerida en produccion.');
     }
 };
