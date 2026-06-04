@@ -8,6 +8,7 @@ import { requireApiKey } from './middlewares/auth.middleware.js';
 import { auditAuthenticatedRequest } from './middlewares/auth-audit.middleware.js';
 import { rateLimit } from './middlewares/rate-limit.middleware.js';
 import { securityHeaders } from './middlewares/security-headers.middleware.js';
+import { cors } from './middlewares/cors.middleware.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 // Middlewares Globales
 app.disable('x-powered-by');
 app.use(securityHeaders);
+app.use(cors);
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '32kb' }));
 
 // Montar Rutas de la API

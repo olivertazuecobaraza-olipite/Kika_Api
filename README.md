@@ -40,6 +40,7 @@ Variables principales:
 ```env
 PORT=3000
 NODE_ENV=development
+CORS_ALLOWED_ORIGINS=https://moodle.example
 MONGO_URI=mongodb://localhost:2017/tutor_db
 OPENAI_API_KEY=tu_api_key_aqui
 QDRANT_URL=http://localhost:6333
@@ -73,6 +74,14 @@ Los endpoints conversacionales requieren ademas:
 
 ```http
 x-user-id: usuario_123
+```
+
+Si el frontend llama a la API directamente desde el navegador, configura
+`CORS_ALLOWED_ORIGINS` con el origen exacto de Moodle, sin ruta final. Para
+permitir varios origenes, separalos con comas:
+
+```env
+CORS_ALLOWED_ORIGINS=https://campus.example,https://campus-staging.example
 ```
 
 El JWT identifica a la aplicacion consumidora mediante `sub`. La cabecera

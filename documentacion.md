@@ -8,6 +8,13 @@
 4. Ejecutar en desarrollo: `pnpm dev`
 5. Ejecutar en produccion: `pnpm start`
 
+Si Moodle llama a esta API directamente desde el navegador, configura el origen
+exacto permitido, sin ruta final:
+
+```env
+CORS_ALLOWED_ORIGINS=https://campus.example
+```
+
 ## Seguridad operativa
 
 - En produccion define siempre `NODE_ENV=production` y configura `AUTH_MODE`.

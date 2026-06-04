@@ -37,6 +37,4 @@ Thumbs.db
 scratch/
 
 # Private token administration utilities
-scripts/generate-api-token.js
-scripts/revoke-api-token.js
-scripts/generate-rsa-keypair.js
+scripts/
