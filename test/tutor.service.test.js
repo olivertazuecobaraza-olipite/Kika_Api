@@ -4,9 +4,16 @@ process.env.OPENAI_API_KEY ||= 'test-openai-api-key';
 
 const {
     appendWebSourcesHtml,
+    buildCollectionSummaryContext,
+    buildStructuralContext,
     cleanWebSearchTrigger,
+    createInsufficientContextResponse,
+    extractTrainingCatalog,
     getTutorResponse,
     getWebResponse,
+    hasSufficientDocumentContext,
+    isAmbiguousDocumentQuestion,
+    isStructuralQuestion,
     normalizeWebSources,
     shouldUseWebSearch
 } = await import('../src/service/tutor.service.js');
@@ -125,4 +132,148 @@ test('genera respuesta web con metadatos y fuentes visibles', async () => {
     assert.equal(response.sources.length, 1);
     assert.match(response.respuesta, /<p>Respuesta web<\/p>/);
     assert.match(response.respuesta, /<h3>Fuentes de internet<\/h3>/);
+});
+
+test('detecta preguntas estructurales del curso', () => {
+    assert.equal(isStructuralQuestion('cuantos modulos tiene este curso'), true);
+    assert.equal(isStructuralQuestion('lista los manuales cargados'), true);
+    assert.equal(isStructuralQuestion('cuantas horas tiene el curso'), true);
+    assert.equal(isStructuralQuestion('explica la memoria RAM'), false);
+});
+
+test('extrae modulos formativos y practicas sin mezclar MP como MF', () => {
+    const catalog = extractTrainingCatalog([
+        {
+            fileName: 'IFCT0210_ficha.pdf',
+            text: `Correspondencia con el Catalogo Modular de Formacion Profesional
+                MF0219_2: Instalacion y configuracion de sistemas operativos (140 horas)
+                UF0852: Instalacion y actualizacion de sistemas operativos (80 horas)
+                UF0853: Explotacion de las funcionalidades del sistema microinformatico (60 horas)
+                MF0957_2: Mantenimiento del subsistema fisico de sistemas informaticos (150 horas)
+                UF1349: Mantenimiento e inventario del subsistema fisico (90 horas)
+                UF1350: Monitorizacion y gestion de incidencias de los sistemas fisicos (60 horas)
+                MF0958_2: Mantenimiento del subsistema logico de sistemas informaticos (150 horas)
+                MF0959_2: Mantenimiento de la seguridad en sistemas informaticos (120 horas)
+                MP0286: Modulo de practicas profesionales no laborales (40 horas)
+                Duracion horas totales certificado de profesionalidad 600`
+        },
+        {
+            fileName: 'manual-mf0958.pdf',
+            text: 'MODULO FORMATIVO: MANTENIMIENTO DEL SUBSISTEMA LOGICO DE SISTEMAS INFORMATICOS Codigo: MF0958_2 Horas: 150'
+        }
+    ]);
+
+    assert.deepEqual(catalog.modules.map(module => module.code), [
+        'MF0219_2',
+        'MF0957_2',
+        'MF0958_2',
+        'MF0959_2'
+    ]);
+    assert.deepEqual(catalog.practices.map(practice => practice.code), ['MP0286']);
+    assert.equal(catalog.modules.length, 4);
+    assert.equal(catalog.practices.length, 1);
+    assert.equal(catalog.totalHours, 600);
+});
+
+test('construye contexto estructural como fuente preferente de coleccion', () => {
+    const context = buildStructuralContext({
+        files: [
+            { fileName: 'IFCT0210_ficha.pdf', chunks: 4 },
+            { fileName: 'manual-mf0958.pdf', chunks: 10 }
+        ],
+        catalog: {
+            totalHours: 600,
+            modules: [
+                { code: 'MF0219_2', title: 'Instalacion y configuracion de sistemas operativos', hours: 140 },
+                { code: 'MF0957_2', title: 'Mantenimiento del subsistema fisico de sistemas informaticos', hours: 150 },
+                { code: 'MF0958_2', title: 'Mantenimiento del subsistema logico de sistemas informaticos', hours: 150 },
+                { code: 'MF0959_2', title: 'Mantenimiento de la seguridad en sistemas informaticos', hours: 120 }
+            ],
+            units: [],
+            practices: [
+                { code: 'MP0286', title: 'Modulo de practicas profesionales no laborales', hours: 40 }
+            ]
+        }
+    });
+
+    assert.match(context, /ESTRUCTURA OFICIAL DETECTADA EN LA COLECCION/);
+    assert.match(context, /Modulos formativos oficiales detectados: 4/);
+    assert.match(context, /MF0219_2/);
+    assert.match(context, /MF0959_2/);
+    assert.match(context, /MP0286/);
+    assert.match(context, /separado de los modulos formativos/);
+});
+
+test('construye resumen minimo de coleccion para cualquier consulta documental', () => {
+    const context = buildCollectionSummaryContext({
+        files: [
+            { fileName: 'ficha.pdf', chunks: 2 },
+            { fileName: 'manual.pdf', chunks: 10 }
+        ],
+        catalog: {
+            modules: [
+                { code: 'MF0001_2', title: 'Modulo de prueba' }
+            ],
+            practices: [
+                { code: 'MP0001', title: 'Practicas de prueba' }
+            ]
+        }
+    });
+
+    assert.match(context, /MEMORIA DOCUMENTAL DE LA COLECCION QDRANT/);
+    assert.match(context, /ficha.pdf/);
+    assert.match(context, /MF0001_2/);
+    assert.match(context, /historial solo ayuda/);
+});
+
+test('evalua suficiencia documental sin contar solo el resumen de coleccion', () => {
+    assert.equal(hasSufficientDocumentContext({
+        structuralQuestion: false,
+        structuralContext: '',
+        explicitPages: [],
+        lexicalChunks: [],
+        searchResult: []
+    }), false);
+
+    assert.equal(hasSufficientDocumentContext({
+        explicitPages: [{ text: 'contenido exacto de pagina' }]
+    }), true);
+
+    assert.equal(hasSufficientDocumentContext({
+        lexicalChunks: [{ text: 'contenido encontrado por termino', matchedTerms: 2, termCount: 3 }]
+    }), true);
+
+    assert.equal(hasSufficientDocumentContext({
+        lexicalChunks: [{ text: 'coincidencia parcial', matchedTerms: 1, termCount: 2 }],
+        searchResult: []
+    }), false);
+
+    assert.equal(hasSufficientDocumentContext({
+        searchResult: [{ score: 0.7, payload: { text: 'x'.repeat(600) } }]
+    }), true);
+});
+
+test('detecta preguntas ambiguas sin evidencia documental recuperada', () => {
+    assert.equal(isAmbiguousDocumentQuestion({
+        prompt: 'eso',
+        explicitPages: [],
+        lexicalChunks: [],
+        structuralQuestion: false
+    }), true);
+
+    assert.equal(isAmbiguousDocumentQuestion({
+        prompt: 'eso',
+        explicitPages: [{ text: 'pagina' }],
+        lexicalChunks: [],
+        structuralQuestion: false
+    }), false);
+});
+
+test('genera respuesta segura cuando no hay contexto suficiente', () => {
+    const response = createInsufficientContextResponse('capital de Francia <test>');
+
+    assert.match(response, /Informacion no disponible/);
+    assert.match(response, /capital de Francia/);
+    assert.match(response, /&lt;test&gt;/);
+    assert.doesNotMatch(response, /Paris/i);
 });

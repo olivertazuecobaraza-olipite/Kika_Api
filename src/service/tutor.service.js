@@ -15,10 +15,16 @@ const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 10 * 60 * 1000);
 const CACHE_MAX_COLLECTIONS = Number(process.env.CACHE_MAX_COLLECTIONS || 20);
 const MAX_SCROLL_POINTS = Number(process.env.QDRANT_MAX_SCROLL_POINTS || 5000);
 const MAX_CONTEXT_CHARS = Number(process.env.MAX_CONTEXT_CHARS || 18000);
-const VECTOR_LIMIT = Number(process.env.QDRANT_VECTOR_LIMIT || 3);
+const COLLECTION_STRUCTURAL_CONTEXT_CHARS = Number(process.env.COLLECTION_STRUCTURAL_CONTEXT_CHARS || 4000);
+const COLLECTION_SUMMARY_CONTEXT_CHARS = Number(process.env.COLLECTION_SUMMARY_CONTEXT_CHARS || 1500);
+const RAG_MIN_CONTEXT_CHARS = Number(process.env.RAG_MIN_CONTEXT_CHARS || 500);
+const RAG_MIN_VECTOR_SCORE = Number(process.env.RAG_MIN_VECTOR_SCORE || 0.68);
+const LEXICAL_LIMIT = Number(process.env.QDRANT_LEXICAL_LIMIT || 6);
+const VECTOR_LIMIT = Number(process.env.QDRANT_VECTOR_LIMIT || 8);
 const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 const PERPLEXITY_MODEL = process.env.PERPLEXITY_MODEL || 'sonar';
+const RAG_DEBUG = /^true$/i.test(process.env.RAG_DEBUG || '');
 const QDRANT_COLLECTION_ERROR_MESSAGE = 'La coleccion de Qdrant indicada no existe o no esta disponible.';
 const WEB_SEARCH_TRIGGER_REGEX = /\bbusca\s+en\s+internet\b/gi;
 const WEB_SEARCH_TRIGGER_TEST_REGEX = /\bbusca\s+en\s+internet\b/i;
@@ -172,6 +178,339 @@ const isRealHeading = (title, num) => {
     return !(isSingleLevel && words.length > 7);
 };
 
+const normalizeText = (value) => String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const normalizeCatalogTitle = (value) => normalizeText(value)
+    .replace(/^[\s:.\-–•●]+/, '')
+    .replace(/[\s:.\-–•●]+$/, '')
+    .replace(/\s*\(\s*(\d+)\s*horas?\s*\)\s*$/i, '')
+    .trim();
+
+const titleCaseCatalogText = (value) => {
+    const normalized = normalizeCatalogTitle(value);
+    if (!normalized) return '';
+
+    if (/[a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1]/.test(normalized)) {
+        return normalized;
+    }
+
+    return normalized.toLocaleLowerCase('es-ES')
+        .replace(/(^|[\s(/-])([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1])/g, (_, prefix, letter) => (
+            `${prefix}${letter.toLocaleUpperCase('es-ES')}`
+        ));
+};
+
+const isLikelyReferenceFile = (fileName) => (
+    /(?:ficha|programa|certificado|boe|anexo|ifct|comt|ssce|adgd|hotr|seag|eocb)/i.test(fileName || '')
+);
+
+const isLikelyBadCatalogTitle = (title) => {
+    if (!title) return true;
+    if (title.length < 8 || title.length > 160) return true;
+    return /^(?:horas?|nivel|codigo|c[oó]digo|familia|[0-9]+)$/i.test(title);
+};
+
+const findTitleAroundCode = ({ text, code, prefixRegex, suffixRegex }) => {
+    const codeIndex = text.indexOf(code);
+    if (codeIndex === -1) return '';
+
+    const before = text.slice(Math.max(0, codeIndex - 500), codeIndex);
+    const after = text.slice(codeIndex + code.length, Math.min(text.length, codeIndex + 500));
+    const prefixMatch = before.match(prefixRegex);
+    if (prefixMatch) return titleCaseCatalogText(prefixMatch[prefixMatch.length - 1]);
+
+    const suffixMatch = after.match(suffixRegex);
+    if (suffixMatch) return titleCaseCatalogText(suffixMatch[1]);
+
+    return '';
+};
+
+const createCatalogItem = ({ code, title = '', hours = null, sourceFile = '', sourceRank = 1, index = 0 }) => ({
+    code,
+    title: titleCaseCatalogText(title),
+    hours: Number.isFinite(Number(hours)) ? Number(hours) : null,
+    sourceFile,
+    sourceRank,
+    index
+});
+
+const preferCatalogItem = (current, candidate) => {
+    if (!current) return candidate;
+
+    const currentHasGoodTitle = !isLikelyBadCatalogTitle(current.title);
+    const candidateHasGoodTitle = !isLikelyBadCatalogTitle(candidate.title);
+    if (!currentHasGoodTitle && candidateHasGoodTitle) return { ...current, ...candidate };
+    if (!current.hours && candidate.hours) return { ...current, ...candidate };
+    if (candidate.sourceRank < current.sourceRank && candidateHasGoodTitle) return { ...current, ...candidate };
+
+    return current;
+};
+
+const addCatalogItem = (map, candidate) => {
+    if (!candidate?.code) return;
+    map.set(candidate.code, preferCatalogItem(map.get(candidate.code), candidate));
+};
+
+export const extractTrainingCatalog = (chunks) => {
+    const modulesByCode = new Map();
+    const unitsByCode = new Map();
+    const practicesByCode = new Map();
+    let totalHours = null;
+
+    chunks.forEach((chunk, chunkIndex) => {
+        const text = normalizeText(chunk.text);
+        if (!text) return;
+
+        const sourceRank = isLikelyReferenceFile(chunk.fileName) ? 0 : 1;
+        const moduleListRegex = /\b(MF\d{4}_\d)\s*:?\s*([^.;●•\n\r]{8,180}?)\s*\(?(\d{2,4})\s*horas?\)?/gi;
+        let match;
+        while ((match = moduleListRegex.exec(text)) !== null) {
+            addCatalogItem(modulesByCode, createCatalogItem({
+                code: match[1],
+                title: match[2],
+                hours: match[3],
+                sourceFile: chunk.fileName,
+                sourceRank,
+                index: chunkIndex
+            }));
+        }
+
+        const moduleBlockRegex = /(?:M[OÓ]DULO\s+(?:FORMATIVO|PROFESIONAL)\s*(?:\d+)?\s*)?(?:Denominaci[oó]n:\s*)?([A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][A-Z0-9\u00c1\u00c9\u00cd\u00d3\u00da\u00d1a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1 ,()./"'-]{8,180}?)\.?\s*(?:C[oó]digo:\s*)\b(MF\d{4}_\d)\b(?:.*?(?:Duraci[oó]n|Horas):?\s*(\d{2,4})\s*horas?)?/gi;
+        while ((match = moduleBlockRegex.exec(text)) !== null) {
+            addCatalogItem(modulesByCode, createCatalogItem({
+                code: match[2],
+                title: match[1],
+                hours: match[3],
+                sourceFile: chunk.fileName,
+                sourceRank,
+                index: chunkIndex
+            }));
+        }
+
+        const moduleCodeRegex = /\b(MF\d{4}_\d)\b/g;
+        while ((match = moduleCodeRegex.exec(text)) !== null) {
+            const code = match[1];
+            const existing = modulesByCode.get(code);
+            if (existing && !isLikelyBadCatalogTitle(existing.title) && existing.hours) continue;
+
+            const title = findTitleAroundCode({
+                text,
+                code,
+                prefixRegex: /(?:M[OÓ]DULO\s+(?:FORMATIVO|PROFESIONAL)(?::|\s*[-–])?\s*|Denominaci[oó]n:\s*)([^.;\n\r]{8,180})$/i,
+                suffixRegex: /^[:\s\-–]*(?:\([^)]+\)\s*)?([^.;●•\n\r]{8,180})/i
+            });
+            const after = text.slice(match.index, Math.min(text.length, match.index + 400));
+            const hoursMatch = after.match(/(?:Duraci[oó]n|Horas):?\s*(\d{2,4})\s*horas?|\((\d{2,4})\s*horas?\)/i);
+
+            addCatalogItem(modulesByCode, createCatalogItem({
+                code,
+                title,
+                hours: hoursMatch?.[1] || hoursMatch?.[2],
+                sourceFile: chunk.fileName,
+                sourceRank,
+                index: chunkIndex
+            }));
+        }
+
+        const unitRegex = /\b(UF\d{4})\b\s*:?\s*([^.;●•\n\r]{8,180}?)\s*\(?(\d{2,4})\s*horas?\)?/gi;
+        while ((match = unitRegex.exec(text)) !== null) {
+            addCatalogItem(unitsByCode, createCatalogItem({
+                code: match[1],
+                title: match[2],
+                hours: match[3],
+                sourceFile: chunk.fileName,
+                sourceRank,
+                index: chunkIndex
+            }));
+        }
+
+        const unitBlockRegex = /(?:UNIDAD\s+FORMATIVA\s*(?:\d+)?\s*)?(?:Denominaci[oó]n:\s*)?([A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][A-Z0-9\u00c1\u00c9\u00cd\u00d3\u00da\u00d1a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1 ,()./"'-]{8,180}?)\.?\s*C[oó]digo:\s*\b(UF\d{4})\b(?:.*?Duraci[oó]n:?\s*(\d{2,4})\s*horas?)?/gi;
+        while ((match = unitBlockRegex.exec(text)) !== null) {
+            addCatalogItem(unitsByCode, createCatalogItem({
+                code: match[2],
+                title: match[1],
+                hours: match[3],
+                sourceFile: chunk.fileName,
+                sourceRank,
+                index: chunkIndex
+            }));
+        }
+
+        const practiceRegex = /\b(MP\d{4})\b\s*:?\s*([^.;●•\n\r]{8,180}?)\s*\(?(\d{2,4})\s*horas?\)?/gi;
+        while ((match = practiceRegex.exec(text)) !== null) {
+            addCatalogItem(practicesByCode, createCatalogItem({
+                code: match[1],
+                title: match[2],
+                hours: match[3],
+                sourceFile: chunk.fileName,
+                sourceRank,
+                index: chunkIndex
+            }));
+        }
+
+        const totalMatch = text.match(/Duraci[oó]n\s+horas\s+totales\s+(?:certificado|curso|especialidad)[^0-9]{0,20}(\d{2,4})|Duraci[oó]n\s+de\s+la\s+formaci[oó]n\s+asociada:\s*(\d{2,4})\s*horas|Horas\s+totales:\s*(\d{2,4})/i);
+        if (totalMatch) {
+            totalHours = Number(totalMatch[1] || totalMatch[2] || totalMatch[3]);
+        }
+    });
+
+    const byCatalogCode = (a, b) => a.code.localeCompare(b.code, 'es', { numeric: true });
+
+    return {
+        modules: [...modulesByCode.values()].filter(item => !isLikelyBadCatalogTitle(item.title)).sort(byCatalogCode),
+        units: [...unitsByCode.values()].filter(item => !isLikelyBadCatalogTitle(item.title)).sort(byCatalogCode),
+        practices: [...practicesByCode.values()].filter(item => !isLikelyBadCatalogTitle(item.title)).sort(byCatalogCode),
+        totalHours
+    };
+};
+
+export const isStructuralQuestion = (prompt) => (
+    /\b(?:cu[aá]ntos?|qu[eé]|lista|listar|enumera|estructura|contenidos?|temario|manuales?|libros?|horas?|duraci[oó]n|unidades?\s+formativas?|m[oó]dulos?)\b/i.test(prompt)
+    && /\b(?:m[oó]dulos?|unidades?\s+formativas?|manuales?|libros?|curso|contenidos?|temario|estructura|horas?|duraci[oó]n)\b/i.test(prompt)
+);
+
+const formatHours = (hours) => hours ? ` (${hours} horas)` : '';
+
+export const buildStructuralContext = ({ files = [], catalog = {} } = {}) => {
+    const lines = ['ESTRUCTURA OFICIAL DETECTADA EN LA COLECCION'];
+
+    if (files.length > 0) {
+        lines.push('Archivos cargados:');
+        files.forEach(file => {
+            lines.push(`- ${file.fileName}: ${file.chunks} fragmentos`);
+        });
+    }
+
+    if (catalog.totalHours) {
+        lines.push(`Duracion total detectada: ${catalog.totalHours} horas`);
+    }
+
+    if (catalog.modules?.length > 0) {
+        lines.push(`Modulos formativos oficiales detectados: ${catalog.modules.length}`);
+        catalog.modules.forEach(module => {
+            lines.push(`- ${module.code}: ${module.title}${formatHours(module.hours)}`);
+        });
+    } else {
+        lines.push('Modulos formativos oficiales detectados: no se ha detectado un listado canonico de modulos formativos.');
+    }
+
+    if (catalog.units?.length > 0) {
+        lines.push('Unidades formativas detectadas:');
+        catalog.units.forEach(unit => {
+            lines.push(`- ${unit.code}: ${unit.title}${formatHours(unit.hours)}`);
+        });
+    }
+
+    if (catalog.practices?.length > 0) {
+        lines.push('Modulo de practicas detectado, separado de los modulos formativos:');
+        catalog.practices.forEach(practice => {
+            lines.push(`- ${practice.code}: ${practice.title}${formatHours(practice.hours)}`);
+        });
+    }
+
+    lines.push('Regla: para preguntas sobre numero/listado de modulos, unidades, manuales, horas o estructura del curso, usa este bloque como fuente preferente. No concluyas que solo existen los elementos presentes en fragmentos vectoriales parciales si este bloque contiene un listado mas completo.');
+
+    return lines.join('\n').slice(0, COLLECTION_STRUCTURAL_CONTEXT_CHARS);
+};
+
+export const buildCollectionSummaryContext = ({ files = [], catalog = {} } = {}) => {
+    const lines = ['MEMORIA DOCUMENTAL DE LA COLECCION QDRANT'];
+
+    if (files.length > 0) {
+        lines.push(`Archivos disponibles: ${files.map(file => file.fileName).join(', ')}`);
+    }
+
+    if (catalog.modules?.length > 0) {
+        lines.push(`Modulos formativos detectados: ${catalog.modules.map(module => `${module.code} ${module.title}`).join('; ')}`);
+    }
+
+    if (catalog.practices?.length > 0) {
+        lines.push(`Practicas detectadas: ${catalog.practices.map(practice => `${practice.code} ${practice.title}`).join('; ')}`);
+    }
+
+    lines.push('Regla: salvo busqueda web activada, toda respuesta debe estar respaldada por fragmentos recuperados de esta coleccion. El historial solo ayuda a interpretar referencias, nunca sustituye a la coleccion.');
+
+    return lines.join('\n').slice(0, COLLECTION_SUMMARY_CONTEXT_CHARS);
+};
+
+const escapeResponseText = (value) => escapeHtml(value);
+
+export const createInsufficientContextResponse = (prompt) => {
+    const question = escapeResponseText(prompt);
+    return `<section><h2>Informacion no disponible en la documentacion</h2><p>No encuentro en la documentacion disponible informacion suficiente para responder con seguridad a la consulta: <strong>${question}</strong>.</p><p>Puede reformular la pregunta indicando el tema, modulo, apartado o pagina concreta que quiere consultar.</p></section>`;
+};
+
+export const isAmbiguousDocumentQuestion = ({ prompt, explicitPages = [], lexicalChunks = [], structuralQuestion = false }) => {
+    if (structuralQuestion || explicitPages.length > 0 || lexicalChunks.length > 0) return false;
+    const normalized = normalizeText(prompt).toLowerCase();
+    return /^(?:eso|esto|lo anterior|el anterior|la anterior|el segundo|el primero|el punto|ese punto|esa parte)\b/i.test(normalized);
+};
+
+export const hasSufficientDocumentContext = ({
+    structuralQuestion = false,
+    structuralContext = '',
+    explicitPages = [],
+    lexicalChunks = [],
+    searchResult = []
+}) => {
+    if (
+        structuralQuestion
+        && structuralContext.includes('Modulos formativos oficiales detectados:')
+        && !structuralContext.includes('no se ha detectado un listado canonico')
+    ) return true;
+    if (explicitPages.length > 0) return true;
+    if (lexicalChunks.some(chunk => {
+        if (!Number.isInteger(chunk.termCount) || !Number.isInteger(chunk.matchedTerms)) return true;
+        return chunk.matchedTerms >= Math.min(2, chunk.termCount);
+    })) return true;
+
+    const vectorContextChars = searchResult.reduce((total, hit) => total + (hit.payload?.text?.length || 0), 0);
+    const hasStrongVectorHit = searchResult.some(hit => Number(hit.score) >= RAG_MIN_VECTOR_SCORE);
+    return hasStrongVectorHit && vectorContextChars >= RAG_MIN_CONTEXT_CHARS;
+};
+
+const getLexicalTerms = (prompt) => normalizeText(prompt)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z0-9_]+/)
+    .filter(term => term.length >= 4 && ![
+        'este',
+        'esta',
+        'curso',
+        'cual',
+        'cuales',
+        'cuantos',
+        'cuantas',
+        'tiene',
+        'lista',
+        'listar',
+        'dime',
+        'sobre'
+    ].includes(term));
+
+const getLexicalContextChunks = ({ chunks, prompt, limit = LEXICAL_LIMIT }) => {
+    const terms = getLexicalTerms(prompt);
+    if (terms.length === 0) return [];
+
+    return chunks
+        .map(chunk => {
+            const searchableText = normalizeText(`${chunk.fileName} ${chunk.text}`)
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '');
+            const matchedTerms = terms.filter(term => searchableText.includes(term)).length;
+            const score = matchedTerms
+                + (isLikelyReferenceFile(chunk.fileName) ? 0.25 : 0);
+            return { ...chunk, score, matchedTerms, termCount: terms.length };
+        })
+        .filter(chunk => chunk.matchedTerms > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+};
+
 const pruneCache = () => {
     while (collectionCache.size > CACHE_MAX_COLLECTIONS) {
         const oldestKey = collectionCache.keys().next().value;
@@ -206,10 +545,19 @@ const getCollectionData = async (vsIdQdrant) => {
     } while (offset);
 
     const pages = [];
+    const chunks = [];
+    const filesByName = new Map();
     allPoints.forEach(point => {
         const text = point.payload?.text || '';
         const fileName = point.payload?.file_name || '';
         const pageMatch = text.match(/<PARSED TEXT FOR PAGE:\s*(\d+)\s*\/\s*\d+>/);
+
+        filesByName.set(fileName, (filesByName.get(fileName) || 0) + 1);
+        chunks.push({
+            id: point.id,
+            fileName,
+            text
+        });
 
         if (pageMatch) {
             pages.push({
@@ -220,6 +568,15 @@ const getCollectionData = async (vsIdQdrant) => {
             });
         }
     });
+
+    const files = [...filesByName.entries()]
+        .map(([fileName, chunksCount]) => ({ fileName, chunks: chunksCount }))
+        .sort((a, b) => {
+            if (isLikelyReferenceFile(a.fileName) !== isLikelyReferenceFile(b.fileName)) {
+                return isLikelyReferenceFile(a.fileName) ? -1 : 1;
+            }
+            return a.fileName.localeCompare(b.fileName);
+        });
 
     pages.sort((a, b) => {
         if (a.fileName !== b.fileName) return a.fileName.localeCompare(b.fileName);
@@ -245,7 +602,8 @@ const getCollectionData = async (vsIdQdrant) => {
         }
     });
 
-    const data = { pages, toc };
+    const catalog = extractTrainingCatalog(chunks);
+    const data = { pages, toc, chunks, files, catalog };
     collectionCache.set(vsIdQdrant, { timestamp: now, data });
     pruneCache();
 
@@ -327,7 +685,7 @@ const getExplicitContextPages = async ({ vsIdQdrant, prompt }) => {
     return explicitPages;
 };
 
-const buildContext = ({ explicitPages, searchResult }) => {
+const buildContext = ({ collectionSummaryContext = '', structuralContext = '', explicitPages = [], lexicalChunks = [], searchResult = [] }) => {
     const finalContexts = [];
     const addedKeys = new Set();
     let contextChars = 0;
@@ -344,8 +702,15 @@ const buildContext = ({ explicitPages, searchResult }) => {
         finalContexts.push(clippedText);
     };
 
+    addContext('collection_summary_context', collectionSummaryContext);
+    addContext('structural_context', structuralContext);
+
     explicitPages.forEach(page => {
         addContext(`${page.fileName}_${page.pageNum}`, page.text);
+    });
+
+    lexicalChunks.forEach(chunk => {
+        addContext(`lexical_${chunk.id}`, chunk.text);
     });
 
     searchResult.forEach(hit => {
@@ -371,9 +736,31 @@ const getInstructions = async ({ curso, context }) => {
         instructionsTemplate = 'Eres un tutor experto para el curso {curso}. Responde basandote estrictamente en este contexto:\n\n{context}';
     }
 
-    return instructionsTemplate
+    const instructions = instructionsTemplate
         .replace(/{curso}/g, curso)
         .replace(/{context}/g, context);
+
+    const ragRule = context.includes('MEMORIA DOCUMENTAL DE LA COLECCION QDRANT')
+        ? `
+
+REGLA PRIORITARIA RAG DOCUMENTAL
+
+Para cualquier pregunta sin busqueda web, responde exclusivamente desde el contexto recuperado de Qdrant.
+No uses conocimiento externo ni el historial para completar huecos. El historial solo sirve para resolver referencias del usuario y siempre queda subordinado al contexto documental actual.
+Si el contexto recuperado no respalda una afirmacion, no la afirmes: indica que esa informacion no aparece en la documentacion disponible o pide precision si la pregunta es ambigua.`
+        : '';
+
+    if (!context.includes('ESTRUCTURA OFICIAL DETECTADA EN LA COLECCION')) {
+        return `${instructions}${ragRule}`;
+    }
+
+    return `${instructions}${ragRule}
+
+REGLA PRIORITARIA SOBRE ESTRUCTURA DE CURSO
+
+Si el contexto incluye el bloque "ESTRUCTURA OFICIAL DETECTADA EN LA COLECCION", usalo como fuente preferente para responder preguntas sobre numero o listado de modulos, unidades formativas, practicas, manuales, contenidos, horas o estructura del curso.
+No digas que solo existe un modulo, unidad o manual basandote en fragmentos vectoriales parciales si ese bloque contiene un listado mas completo.
+Las practicas MP deben distinguirse de los modulos formativos MF, salvo que el usuario pida incluir todo.`;
 };
 
 const getWebInstructions = async ({ curso, context }) => {
@@ -459,6 +846,32 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
         limit: VECTOR_LIMIT
     });
 
+    let collectionData = null;
+    let collectionSummaryContext = '';
+    let structuralContext = '';
+    let lexicalChunks = [];
+    const structuralQuestion = isStructuralQuestion(cleanPrompt);
+    try {
+        collectionData = await getCollectionData(vsIdQdrant);
+        collectionSummaryContext = buildCollectionSummaryContext({
+            files: collectionData.files,
+            catalog: collectionData.catalog
+        });
+        lexicalChunks = getLexicalContextChunks({
+            chunks: collectionData.chunks,
+            prompt: cleanPrompt
+        });
+
+        if (structuralQuestion) {
+            structuralContext = buildStructuralContext({
+                files: collectionData.files,
+                catalog: collectionData.catalog
+            });
+        }
+    } catch (err) {
+        console.error('[TutorService] Error al construir memoria estructural de la coleccion:', err);
+    }
+
     let explicitPages = [];
     try {
         explicitPages = await getExplicitContextPages({ vsIdQdrant, prompt: cleanPrompt });
@@ -466,7 +879,63 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
         console.error('[TutorService] Error al intentar recuperar contexto determinista:', err);
     }
 
-    const context = buildContext({ explicitPages, searchResult });
+    if (RAG_DEBUG && collectionData) {
+        console.log('[TutorService] RAG debug:', JSON.stringify({
+            collection: vsIdQdrant,
+            structuralQuestion,
+            files: collectionData.files,
+            modules: collectionData.catalog.modules.map(module => module.code),
+            units: collectionData.catalog.units.map(unit => unit.code),
+            practices: collectionData.catalog.practices.map(practice => practice.code),
+            sufficientContext: hasSufficientDocumentContext({
+                structuralQuestion,
+                structuralContext,
+                explicitPages,
+                lexicalChunks,
+                searchResult
+            }),
+            ambiguousQuestion: isAmbiguousDocumentQuestion({
+                prompt: cleanPrompt,
+                explicitPages,
+                lexicalChunks,
+                structuralQuestion
+            }),
+            lexicalChunkIds: lexicalChunks.map(chunk => chunk.id),
+            vectorHitIds: searchResult.map(hit => hit.id)
+        }));
+    }
+
+    if (!webSearchUsed) {
+        const ambiguousQuestion = isAmbiguousDocumentQuestion({
+            prompt: cleanPrompt,
+            explicitPages,
+            lexicalChunks,
+            structuralQuestion
+        });
+        const sufficientContext = hasSufficientDocumentContext({
+            structuralQuestion,
+            structuralContext,
+            explicitPages,
+            lexicalChunks,
+            searchResult
+        });
+
+        if (ambiguousQuestion || !sufficientContext) {
+            return {
+                respuesta: createInsufficientContextResponse(cleanPrompt),
+                webSearchUsed: false,
+                sources: []
+            };
+        }
+    }
+
+    const context = buildContext({
+        collectionSummaryContext,
+        structuralContext,
+        explicitPages,
+        lexicalChunks,
+        searchResult
+    });
     const normalizedHistory = normalizeHistory(history);
     if (webSearchUsed) {
         return getWebResponse({
