@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
-    "check": "node --check src/app.js && node --check src/service/tutor.service.js && node --check src/service/auth.service.js && node --check src/service/token-revocation.service.js && node --check src/service/license-registry.service.js && node --check src/service/license-issuer.service.js && node --check src/controllers/tutor.controller.js && node --check src/controllers/conversation.controller.js && node --check src/middlewares/validator.middleware.js && node --check src/middlewares/auth.middleware.js && node --check src/middlewares/auth-audit.middleware.js && node --check src/middlewares/rate-limit.middleware.js && node --check src/middlewares/security-headers.middleware.js && node --check src/middlewares/cors.middleware.js && node --check src/config/env.js && node --check src/config/auth.js && node --check src/config/perplexity.js && node --check src/models/conversation.model.js && node --check src/models/message.model.js && node --check src/models/interaction.model.js && node --check src/models/revoked-token.model.js && node --check src/models/issued-token.model.js",
+    "check": "node --check src/app.js && node --check src/service/tutor.service.js && node --check src/service/qdrant-admin.service.js && node --check src/service/auth.service.js && node --check src/service/token-revocation.service.js && node --check src/service/license-registry.service.js && node --check src/service/license-issuer.service.js && node --check src/controllers/tutor.controller.js && node --check src/controllers/qdrant-admin.controller.js && node --check src/controllers/conversation.controller.js && node --check src/routes/qdrant-admin.routes.js && node --check src/middlewares/validator.middleware.js && node --check src/middlewares/qdrant-admin.middleware.js && node --check src/middlewares/auth.middleware.js && node --check src/middlewares/auth-audit.middleware.js && node --check src/middlewares/rate-limit.middleware.js && node --check src/middlewares/security-headers.middleware.js && node --check src/middlewares/cors.middleware.js && node --check src/config/env.js && node --check src/config/auth.js && node --check src/config/perplexity.js && node --check src/models/conversation.model.js && node --check src/models/message.model.js && node --check src/models/interaction.model.js && node --check src/models/qdrant-collection.model.js && node --check src/models/revoked-token.model.js && node --check src/models/issued-token.model.js",
     "test": "node --test test/*.test.js"
   },
   "keywords": [],
@@ -27,8 +27,11 @@
     "express": "^5.2.1",
     "express-validator": "^7.3.2",
     "jsonwebtoken": "^9.0.3",
+    "mammoth": "^1.12.0",
     "mongoose": "^9.6.2",
-    "openai": "^6.38.0"
+    "multer": "^2.1.1",
+    "openai": "^6.38.0",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

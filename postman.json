@@ -547,6 +547,123 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "03 - Qdrant Admin",
+      "item": [
+        {
+          "name": "GET /api/tutor/qdrant/collections",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/qdrant/collections?page=1&page_size=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "qdrant", "collections"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/tutor/qdrant/collections/sync",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/qdrant/collections/sync",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "qdrant", "collections", "sync"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/tutor/qdrant/collections",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"collection_name\": \"{{admin_collection_name}}\",\n  \"display_name\": \"Curso {{curso}}\",\n  \"course_id\": \"{{course_id}}\",\n  \"curso\": \"{{curso}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/qdrant/collections",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "qdrant", "collections"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/tutor/qdrant/collections/:collection/files",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/qdrant/collections/{{admin_collection_name}}/files",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "qdrant", "collections", "{{admin_collection_name}}", "files"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/tutor/qdrant/collections/:collection/files/batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "files", "type": "file", "src": [] },
+                { "key": "course_id", "value": "{{course_id}}", "type": "text" },
+                { "key": "curso", "value": "{{curso}}", "type": "text" },
+                { "key": "replace_existing", "value": "true", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/qdrant/collections/{{admin_collection_name}}/files/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "qdrant", "collections", "{{admin_collection_name}}", "files", "batch"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/tutor/qdrant/collections/:collection?confirm=true",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/tutor/qdrant/collections/{{admin_collection_name}}?confirm=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "qdrant", "collections", "{{admin_collection_name}}"],
+              "query": [
+                { "key": "confirm", "value": "true" }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "event": [
@@ -571,6 +688,7 @@
     { "key": "conversation_id", "value": "", "type": "string" },
     { "key": "course_id", "value": "790", "type": "string" },
     { "key": "curso", "value": "COMT013PO", "type": "string" },
+    { "key": "admin_collection_name", "value": "vs_COMT013PO_790", "type": "string" },
     { "key": "vs_id_qdrant", "value": "vs_69d3542f0a848191aab05cbae571122a", "type": "string" }
   ]
 }

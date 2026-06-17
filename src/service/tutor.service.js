@@ -518,6 +518,10 @@ const pruneCache = () => {
     }
 };
 
+export const invalidateCollectionCache = (vsIdQdrant) => {
+    collectionCache.delete(vsIdQdrant);
+};
+
 const getCollectionData = async (vsIdQdrant) => {
     const cached = collectionCache.get(vsIdQdrant);
     const now = Date.now();

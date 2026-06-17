@@ -131,6 +131,28 @@ siguen disponibles al recargar una conversacion.
 
 Borra la conversacion y sus mensajes.
 
+## Gestion administrativa de Qdrant
+
+Las rutas `/api/tutor/qdrant/*` usan el mismo mecanismo de autenticacion que el
+tutor. Estan pensadas para una UI futura con subida por drag-and-drop o selector
+de ficheros.
+
+- `GET /api/tutor/qdrant/collections?page=1&page_size=10`: lista colecciones paginadas.
+- `GET /api/tutor/qdrant/collections?course_id=790`: filtra por codigo de curso.
+- `GET /api/tutor/qdrant/collections?file_name=manual.pdf`: filtra por nombre de fichero.
+- `GET /api/tutor/qdrant/collections/:collectionName/files`: lista ficheros de una coleccion.
+- `POST /api/tutor/qdrant/collections/sync`: registra en MongoDB colecciones ya existentes en Qdrant.
+- `POST /api/tutor/qdrant/collections`: crea una coleccion nueva.
+- `POST /api/tutor/qdrant/collections/:collectionName/files`: sube un fichero `PDF`, `DOCX` o `TXT`.
+- `POST /api/tutor/qdrant/collections/:collectionName/files/batch`: sube varios ficheros.
+- `DELETE /api/tutor/qdrant/collections/:collectionName/files/:fileId`: elimina un fichero indexado.
+- `DELETE /api/tutor/qdrant/collections/:collectionName/files/by-name?file_name=manual.pdf`: elimina ficheros legacy sin `file_id`.
+- `DELETE /api/tutor/qdrant/collections/:collectionName?confirm=true`: elimina una coleccion completa.
+
+El backend guarda metadata local en MongoDB para paginar y filtrar sin recorrer
+Qdrant en cada peticion. Cada punto nuevo en Qdrant incluye `course_id`, `curso`,
+`file_id`, `file_name`, `chunk_index`, `source_type`, `uploaded_at` y `text`.
+
 ## Validacion
 
 Ejecutar comprobaciones de sintaxis:

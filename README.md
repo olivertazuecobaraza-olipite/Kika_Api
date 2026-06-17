@@ -302,6 +302,110 @@ curl -X DELETE http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e
 
 Si la operacion se completa correctamente, devuelve `204 No Content`.
 
+## Gestion administrativa de Qdrant
+
+Los endpoints bajo `/api/tutor/qdrant` usan el mismo token/API key que el resto
+de la API. Permiten preparar una UI de gestion para listar, crear, cargar y
+borrar colecciones/ficheros de Qdrant.
+
+### Listar colecciones
+
+```http
+GET /api/tutor/qdrant/collections?page=1&page_size=10
+GET /api/tutor/qdrant/collections?course_id=790
+GET /api/tutor/qdrant/collections?curso=COMT013PO
+GET /api/tutor/qdrant/collections?file_name=manual.pdf
+GET /api/tutor/qdrant/collections?search=manual
+```
+
+Respuesta:
+
+```json
+{
+  "items": [],
+  "page": 1,
+  "page_size": 10,
+  "total": 0,
+  "has_next": false
+}
+```
+
+### Sincronizar colecciones existentes
+
+```http
+POST /api/tutor/qdrant/collections/sync
+```
+
+Crea metadata local para colecciones ya existentes en Qdrant y agrupa ficheros
+legacy usando `payload.file_name`.
+
+### Crear coleccion
+
+```http
+POST /api/tutor/qdrant/collections
+```
+
+```json
+{
+  "collection_name": "vs_COMT013PO_790",
+  "display_name": "Curso COMT013PO",
+  "course_id": "790",
+  "curso": "COMT013PO"
+}
+```
+
+### Listar ficheros de una coleccion
+
+```http
+GET /api/tutor/qdrant/collections/vs_COMT013PO_790/files
+```
+
+### Subir ficheros
+
+Soporta `PDF`, `DOCX` y `TXT` mediante `multipart/form-data`.
+
+```bash
+curl -X POST http://localhost:3000/api/tutor/qdrant/collections/vs_COMT013PO_790/files \
+  -H "Authorization: Bearer <token>" \
+  -F "file=@manual.pdf" \
+  -F "course_id=790" \
+  -F "curso=COMT013PO"
+```
+
+Para varios ficheros:
+
+```bash
+curl -X POST http://localhost:3000/api/tutor/qdrant/collections/vs_COMT013PO_790/files/batch \
+  -H "Authorization: Bearer <token>" \
+  -F "files=@manual.pdf" \
+  -F "files=@guia.docx" \
+  -F "replace_existing=true"
+```
+
+Ejemplo desde React:
+
+```js
+const formData = new FormData();
+files.forEach(file => formData.append('files', file));
+
+await fetch('/api/tutor/qdrant/collections/vs_COMT013PO_790/files/batch', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${token}` },
+  body: formData
+});
+```
+
+### Borrar ficheros y colecciones
+
+```http
+DELETE /api/tutor/qdrant/collections/:collectionName/files/:fileId
+DELETE /api/tutor/qdrant/collections/:collectionName/files/by-name?file_name=manual.pdf
+DELETE /api/tutor/qdrant/collections/:collectionName?confirm=true
+```
+
+Las operaciones de subida y borrado invalidan la cache documental del tutor para
+que las respuestas posteriores usen el estado nuevo de Qdrant.
+
 ## Validaciones principales
 
 - `course id`, `curso`, `vs_id_QDRANT` y `x-user-id` son obligatorios en los endpoints que los requieren.
