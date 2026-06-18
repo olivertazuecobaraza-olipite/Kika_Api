@@ -227,6 +227,138 @@
           "response": []
         },
         {
+          "name": "POST /summaries - generar resumen",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('incluye HTML de resumen', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.conversation_id).to.eql(pm.collectionVariables.get('conversation_id'));",
+                  "  pm.expect(json.tipo_generacion).to.eql('resumen');",
+                  "  pm.expect(json.respuesta).to.be.a('string').and.not.empty;",
+                  "  pm.expect(json.fuentes).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tema\": \"Prevencion de riesgos laborales\",\n  \"extension\": \"medio\",\n  \"formato\": \"puntos_clave\",\n  \"enfoque\": \"para_estudiar\",\n  \"indicaciones_adicionales\": \"Incluye ejemplos practicos\",\n  \"web_search\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/summaries",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "summaries"]
+            },
+            "description": "Genera un resumen estructurado desde la plantilla del frontend y lo guarda en la conversacion."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /exams - generar examen",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('incluye HTML de examen', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.conversation_id).to.eql(pm.collectionVariables.get('conversation_id'));",
+                  "  pm.expect(json.tipo_generacion).to.eql('examen');",
+                  "  pm.expect(json.respuesta).to.be.a('string').and.not.empty;",
+                  "  pm.expect(json.web_search_used).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tema\": \"Cobro en caja\",\n  \"tipo\": \"mixto\",\n  \"numero_preguntas_test\": 5,\n  \"numero_preguntas_abiertas\": 2,\n  \"nivel_dificultad\": \"intermedio\",\n  \"indicaciones_adicionales\": \"No incluyas soluciones\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/exams",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "exams"]
+            },
+            "description": "Genera un examen estructurado desde la plantilla del frontend y lo guarda en la conversacion."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /exercises - generar ejercicio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('incluye HTML de ejercicio', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.conversation_id).to.eql(pm.collectionVariables.get('conversation_id'));",
+                  "  pm.expect(json.tipo_generacion).to.eql('ejercicio');",
+                  "  pm.expect(json.respuesta).to.be.a('string').and.not.empty;",
+                  "  pm.expect(json.web_search_used).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json", "type": "text" },
+              { "key": "Authorization", "value": "Bearer {{api_token}}", "type": "text" },
+              { "key": "x-user-id", "value": "{{user_id}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tema\": \"Atencion al cliente\",\n  \"tipo\": \"caso_aplicado\",\n  \"nivel_dificultad\": \"basico\",\n  \"apartados\": 3,\n  \"incluir_solucion\": true,\n  \"indicaciones_adicionales\": \"Plantea una situacion realista\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tutor/conversations/{{conversation_id}}/exercises",
+              "host": ["{{base_url}}"],
+              "path": ["api", "tutor", "conversations", "{{conversation_id}}", "exercises"]
+            },
+            "description": "Genera un ejercicio estructurado desde la plantilla del frontend y lo guarda en la conversacion."
+          },
+          "response": []
+        },
+        {
           "name": "GET /conversations - listar por curso",
           "event": [
             {

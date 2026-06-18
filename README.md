@@ -239,6 +239,94 @@ Respuesta:
 }
 ```
 
+### Generar resumen en una conversacion
+
+```http
+POST /api/tutor/conversations/:conversationId/summaries
+```
+
+Genera un resumen desde los parametros de una plantilla del frontend, guarda el
+submit como mensaje de usuario y devuelve el HTML como mensaje del asistente.
+Este endpoint puede usar busqueda web opcional con `web_search: true`.
+
+```bash
+curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/summaries \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -H "x-user-id: usuario_123" \
+  -d '{
+    "tema": "Prevencion de riesgos laborales",
+    "extension": "medio",
+    "formato": "puntos_clave",
+    "enfoque": "para_estudiar",
+    "indicaciones_adicionales": "Incluye ejemplos practicos",
+    "web_search": false
+  }'
+```
+
+### Generar examen en una conversacion
+
+```http
+POST /api/tutor/conversations/:conversationId/exams
+```
+
+Genera un examen basado en la documentacion del curso. No acepta `web_search`.
+
+```bash
+curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/exams \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -H "x-user-id: usuario_123" \
+  -d '{
+    "tema": "Cobro en caja",
+    "tipo": "mixto",
+    "numero_preguntas_test": 5,
+    "numero_preguntas_abiertas": 2,
+    "nivel_dificultad": "intermedio",
+    "indicaciones_adicionales": "No incluyas soluciones"
+  }'
+```
+
+### Generar ejercicio en una conversacion
+
+```http
+POST /api/tutor/conversations/:conversationId/exercises
+```
+
+Genera un ejercicio basado en la documentacion del curso. No acepta
+`web_search`.
+
+```bash
+curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/exercises \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -H "x-user-id: usuario_123" \
+  -d '{
+    "tema": "Atencion al cliente",
+    "tipo": "caso_aplicado",
+    "nivel_dificultad": "basico",
+    "apartados": 3,
+    "incluir_solucion": true,
+    "indicaciones_adicionales": "Plantea una situacion realista"
+  }'
+```
+
+Los tres endpoints devuelven el mismo contrato:
+
+```json
+{
+  "conversation_id": "66583f4c2a0d4b98e1e0a111",
+  "tipo_generacion": "resumen",
+  "respuesta": "<section>...</section>",
+  "web_search_used": false,
+  "fuentes": []
+}
+```
+
+`respuesta` es un fragmento HTML valido preparado para insertarse directamente
+en el chat del frontend. No incluye `<html>`, `<head>`, `<body>`, scripts ni
+estilos inline.
+
 ### Listar conversaciones
 
 ```http
