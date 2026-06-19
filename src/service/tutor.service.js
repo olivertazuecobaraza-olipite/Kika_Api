@@ -32,6 +32,153 @@ const EMPTY_WEB_SEARCH_PROMPT_MESSAGE = 'La consulta no puede contener unicament
 const WEB_SEARCH_NOT_CONFIGURED_MESSAGE = 'La busqueda en internet no esta configurada.';
 const WEB_SEARCH_UNAVAILABLE_MESSAGE = 'La busqueda en internet no esta disponible en este momento.';
 
+const LANGUAGE_PROFILES = {
+    en: { languageName: 'English', localeHint: 'en' },
+    es: { languageName: 'Spanish', localeHint: 'es' },
+    pt: { languageName: 'Portuguese', localeHint: 'pt' },
+    fr: { languageName: 'French', localeHint: 'fr' },
+    ca: { languageName: 'Catalan', localeHint: 'ca' },
+    gl: { languageName: 'Galician', localeHint: 'gl' },
+    eu: { languageName: 'Basque', localeHint: 'eu' },
+    de: { languageName: 'German', localeHint: 'de' },
+    it: { languageName: 'Italian', localeHint: 'it' },
+    ru: { languageName: 'Russian', localeHint: 'ru' },
+    zh: { languageName: 'Chinese', localeHint: 'zh' },
+    ja: { languageName: 'Japanese', localeHint: 'ja' },
+    ar: { languageName: 'Arabic', localeHint: 'ar' },
+    ko: { languageName: 'Korean', localeHint: 'ko' }
+};
+
+const LANGUAGE_ALIASES = new Map([
+    ['english', 'en'], ['ingles', 'en'], ['inglés', 'en'], ['inglês', 'en'],
+    ['spanish', 'es'], ['espanol', 'es'], ['español', 'es'], ['castellano', 'es'],
+    ['portuguese', 'pt'], ['portugues', 'pt'], ['portugués', 'pt'], ['português', 'pt'],
+    ['french', 'fr'], ['frances', 'fr'], ['francés', 'fr'], ['français', 'fr'],
+    ['catalan', 'ca'], ['catalán', 'ca'], ['catala', 'ca'], ['català', 'ca'], ['valenciano', 'ca'], ['valencià', 'ca'],
+    ['galician', 'gl'], ['gallego', 'gl'], ['galego', 'gl'],
+    ['basque', 'eu'], ['euskera', 'eu'], ['euskara', 'eu'], ['vasco', 'eu'],
+    ['german', 'de'], ['aleman', 'de'], ['alemán', 'de'], ['deutsch', 'de'],
+    ['italian', 'it'], ['italiano', 'it'],
+    ['russian', 'ru'], ['ruso', 'ru'], ['русский', 'ru'],
+    ['chinese', 'zh'], ['chino', 'zh'], ['中文', 'zh'],
+    ['japanese', 'ja'], ['japones', 'ja'], ['japonés', 'ja'], ['日本語', 'ja'],
+    ['arabic', 'ar'], ['arabe', 'ar'], ['árabe', 'ar'], ['العربية', 'ar'],
+    ['korean', 'ko'], ['coreano', 'ko'], ['한국어', 'ko']
+]);
+
+const normalizeForDetection = (value) => String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[¿¡]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const detectExplicitLanguageCode = (prompt) => {
+    const patterns = [
+        /\b(?:respond|reply|answer)\s+in\s+([a-záéíóúàèìòùâêîôûãõçñü]+)\b/i,
+        /\b(?:responde|contesta|contestame|contéstame|responder)\s+en\s+([a-záéíóúàèìòùâêîôûãõçñü]+)\b/i,
+        /\b(?:responda|responde|contesta)\s+em\s+([a-záéíóúàèìòùâêîôûãõçñü]+)\b/i
+    ];
+
+    for (const pattern of patterns) {
+        const match = String(prompt || '').match(pattern);
+        if (!match) continue;
+
+        const languageCode = LANGUAGE_ALIASES.get(match[1].toLowerCase())
+            || LANGUAGE_ALIASES.get(normalizeForDetection(match[1]));
+        if (languageCode) return languageCode;
+    }
+
+    return '';
+};
+
+const stripExplicitLanguageInstruction = (prompt) => String(prompt || '')
+    .replace(/^\s*(?:respond|reply|answer)\s+in\s+[a-záéíóúàèìòùâêîôûãõçñü]+\s*:?\s*/i, '')
+    .replace(/^\s*(?:responde|contesta|contestame|contéstame|responder)\s+en\s+[a-záéíóúàèìòùâêîôûãõçñü]+\s*:?\s*/i, '')
+    .replace(/^\s*(?:responda|responde|contesta)\s+em\s+[a-záéíóúàèìòùâêîôûãõçñü]+\s*:?\s*/i, '')
+    .trim();
+
+const stripLeadingGreeting = (prompt) => {
+    const trimmed = String(prompt || '').trim();
+    const match = trimmed.match(/^(?:hi|hello|hey|hola|buenas|ol[aá]|bonjour|salut|ciao|hallo|oi)\b[\s,;:!-]*(.+)$/i);
+    return match?.[1]?.trim() || trimmed;
+};
+
+const countMatches = (words, candidates) => words.reduce((total, word) => (
+    candidates.has(word) ? total + 1 : total
+), 0);
+
+const detectLanguageFromText = (prompt) => {
+    const raw = String(prompt || '').trim();
+    if (/[\u4e00-\u9fff]/.test(raw)) return { code: 'zh', score: 5, tied: false };
+    if (/[\u3040-\u30ff]/.test(raw)) return { code: 'ja', score: 5, tied: false };
+    if (/[\uac00-\ud7af]/.test(raw)) return { code: 'ko', score: 5, tied: false };
+    if (/[\u0600-\u06ff]/.test(raw)) return { code: 'ar', score: 5, tied: false };
+    if (/[\u0400-\u04ff]/.test(raw)) return { code: 'ru', score: 5, tied: false };
+
+    const normalized = normalizeForDetection(raw);
+    const words = normalized.split(/[^a-z0-9_]+/).filter(Boolean).slice(0, 24);
+    const profiles = {
+        en: new Set(['hi', 'hello', 'hey', 'how', 'are', 'you', 'what', 'who', 'can', 'do', 'does', 'of', 'explain', 'module', 'course', 'documentation', 'capital', 'france', 'thanks', 'thank']),
+        es: new Set(['hola', 'buenas', 'que', 'quien', 'como', 'estas', 'eres', 'puedes', 'explica', 'explicame', 'modulo', 'curso', 'documentacion', 'capital', 'francia', 'gracias', 'ayuda']),
+        pt: new Set(['ola', 'oi', 'como', 'estas', 'esta', 'voce', 'qual', 'funcao', 'podes', 'pode', 'ajuda', 'obrigado', 'obrigada', 'documentacao', 'curso']),
+        fr: new Set(['bonjour', 'salut', 'comment', 'allez', 'vous', 'qui', 'etes', 'peux', 'pouvez', 'expliquer', 'module', 'cours', 'documentation', 'merci']),
+        ca: new Set(['hola', 'bon', 'dia', 'que', 'qui', 'com', 'estas', 'ets', 'pots', 'explica', 'modul', 'curs', 'documentacio', 'gracies']),
+        gl: new Set(['ola', 'boas', 'que', 'quen', 'como', 'estas', 'es', 'podes', 'explica', 'modulo', 'curso', 'documentacion', 'grazas']),
+        de: new Set(['hallo', 'guten', 'wie', 'geht', 'dir', 'wer', 'bist', 'was', 'kannst', 'erklar', 'modul', 'kurs', 'dokumentation', 'danke']),
+        it: new Set(['ciao', 'buongiorno', 'come', 'stai', 'chi', 'sei', 'cosa', 'puoi', 'spiega', 'modulo', 'corso', 'documentazione', 'grazie'])
+    };
+
+    const scored = Object.entries(profiles)
+        .map(([code, candidates]) => ({ code, score: countMatches(words, candidates) }))
+        .sort((a, b) => b.score - a.score);
+
+    const [best, second] = scored;
+    if (!best || best.score === 0) return { code: 'es', score: 0, tied: false };
+    return {
+        code: best.code,
+        score: best.score,
+        tied: second?.score === best.score
+    };
+};
+
+export const detectResponseLanguage = (prompt) => {
+    const explicitCode = detectExplicitLanguageCode(prompt);
+    if (explicitCode) {
+        return {
+            ...LANGUAGE_PROFILES[explicitCode],
+            explicitOverride: true
+        };
+    }
+
+    const generationTopicMatch = String(prompt || '').match(/\bTema del (?:resumen|examen|ejercicio):\s*([^\n]+)/i);
+    if (generationTopicMatch?.[1]) {
+        const topicDetection = detectLanguageFromText(generationTopicMatch[1]);
+        if (topicDetection.score > 0 && !topicDetection.tied) {
+            return {
+                ...(LANGUAGE_PROFILES[topicDetection.code] || LANGUAGE_PROFILES.es),
+                explicitOverride: false
+            };
+        }
+    }
+
+    const withoutExplicitInstruction = stripExplicitLanguageInstruction(prompt);
+    const withoutGreeting = stripLeadingGreeting(withoutExplicitInstruction);
+    const candidateDetection = detectLanguageFromText(withoutGreeting);
+    const originalDetection = detectLanguageFromText(withoutExplicitInstruction);
+    const selectedCode = withoutGreeting !== withoutExplicitInstruction
+        && candidateDetection.score >= 2
+        && !candidateDetection.tied
+        ? candidateDetection.code
+        : originalDetection.code;
+
+    return {
+        ...(LANGUAGE_PROFILES[selectedCode] || LANGUAGE_PROFILES.es),
+        explicitOverride: false
+    };
+};
+
 const createPublicError = ({ name, status, publicMessage, cause }) => {
     const error = new Error(publicMessage);
     error.name = name;
@@ -92,9 +239,10 @@ export const normalizeWebSources = ({ citations = [], searchResults = [] } = {})
     return [...sourcesByUrl.values()];
 };
 
-export const appendWebSourcesHtml = (responseHtml, sources) => {
+export const appendWebSourcesHtml = (responseHtml, sources, responseLanguage = LANGUAGE_PROFILES.es) => {
     if (sources.length === 0) return responseHtml;
 
+    const copy = getLocalizedCopy(responseLanguage);
     const items = sources
         .map(source => {
             const title = escapeHtml(source.titulo);
@@ -104,7 +252,7 @@ export const appendWebSourcesHtml = (responseHtml, sources) => {
         })
         .join('');
 
-    return `${responseHtml}<section><h3>Fuentes de internet</h3><ul>${items}</ul></section>`;
+    return `${responseHtml}<section><h3>${copy.sourcesTitle}</h3><ul>${items}</ul></section>`;
 };
 
 const isMissingQdrantCollectionError = (err) => {
@@ -437,9 +585,164 @@ export const buildCollectionSummaryContext = ({ files = [], catalog = {} } = {})
 
 const escapeResponseText = (value) => escapeHtml(value);
 
-export const createInsufficientContextResponse = (prompt) => {
+const localizedCopy = {
+    en: {
+        unavailableTitle: 'Information not available in the documentation',
+        unavailableBody: 'I do not find enough information in the available documentation to answer this query safely:',
+        unavailableHint: 'You can rephrase the question by indicating the topic, module, section or page you want to consult.',
+        externalTitle: 'Outside the available documentation',
+        externalBody: 'I cannot answer that with external knowledge unless web search is enabled. The query is not backed by the course documentation:',
+        externalHint: 'If you want an internet-backed answer, enable web search or include "Busca en internet" in the request.',
+        smalltalk: "I'm here and ready to help you with questions about the course documentation.",
+        identity: 'I am a tutor specialized in answering questions based on the course documentation. I can locate, explain and summarize information from that source, and I can use internet search only when web search is enabled.',
+        help: 'I can help you find, explain, summarize and structure information from the course documentation. You can also ask for web search by enabling web_search or including "Busca en internet" in your request.',
+        sourcesTitle: 'Internet sources'
+    },
+    es: {
+        unavailableTitle: 'Informacion no disponible en la documentacion',
+        unavailableBody: 'No encuentro en la documentacion disponible informacion suficiente para responder con seguridad a la consulta:',
+        unavailableHint: 'Puede reformular la pregunta indicando el tema, modulo, apartado o pagina concreta que quiere consultar.',
+        externalTitle: 'Fuera de la documentacion disponible',
+        externalBody: 'No puedo responder con conocimiento externo salvo que la busqueda web este activada. La consulta no esta respaldada por la documentacion del curso:',
+        externalHint: 'Si quiere una respuesta basada en internet, active web_search o incluya "Busca en internet" en la peticion.',
+        smalltalk: 'Estoy aqui y listo para ayudarle con preguntas sobre la documentacion del curso.',
+        identity: 'Soy un tutor especializado en responder consultas basadas en la documentacion del curso. Puedo localizar, explicar y resumir informacion de esa fuente, y solo uso busqueda en internet cuando esta activada.',
+        help: 'Puedo ayudarle a localizar, explicar, resumir y estructurar informacion de la documentacion del curso. Tambien puede solicitar busqueda web activando web_search o incluyendo "Busca en internet" en la peticion.',
+        sourcesTitle: 'Fuentes de internet'
+    },
+    pt: {
+        unavailableTitle: 'Informacao nao disponivel na documentacao',
+        unavailableBody: 'Nao encontro na documentacao disponivel informacao suficiente para responder com seguranca a consulta:',
+        unavailableHint: 'Pode reformular a pergunta indicando o tema, modulo, seccao ou pagina concreta que quer consultar.',
+        externalTitle: 'Fora da documentacao disponivel',
+        externalBody: 'Nao posso responder com conhecimento externo a menos que a pesquisa web esteja ativada. A consulta nao esta suportada pela documentacao do curso:',
+        externalHint: 'Se quiser uma resposta baseada na internet, ative web_search ou inclua "Busca en internet" no pedido.',
+        smalltalk: 'Estou aqui e pronto para ajudar com perguntas sobre a documentacao do curso.',
+        identity: 'Sou um tutor especializado em responder a perguntas com base na documentacao do curso. Posso localizar, explicar e resumir informacao dessa fonte, e so uso pesquisa na internet quando estiver ativada.',
+        help: 'Posso ajudar a localizar, explicar, resumir e estruturar informacao da documentacao do curso. Tambem pode pedir pesquisa web ativando web_search ou incluindo "Busca en internet" no pedido.',
+        sourcesTitle: 'Fontes da internet'
+    },
+    fr: {
+        unavailableTitle: 'Information non disponible dans la documentation',
+        unavailableBody: 'Je ne trouve pas assez d information dans la documentation disponible pour repondre avec certitude a la requete :',
+        unavailableHint: 'Vous pouvez reformuler la question en indiquant le theme, le module, la section ou la page precise a consulter.',
+        externalTitle: 'Hors de la documentation disponible',
+        externalBody: 'Je ne peux pas repondre avec des connaissances externes sauf si la recherche web est activee. La requete n est pas etayee par la documentation du cours :',
+        externalHint: 'Si vous voulez une reponse fondee sur internet, activez web_search ou incluez "Busca en internet" dans la demande.',
+        smalltalk: 'Je suis pret a vous aider avec des questions sur la documentation du cours.',
+        identity: 'Je suis un tuteur specialise dans les reponses fondees sur la documentation du cours. Je peux localiser, expliquer et resumer les informations de cette source, et utiliser internet uniquement lorsque la recherche web est activee.',
+        help: 'Je peux vous aider a trouver, expliquer, resumer et structurer les informations de la documentation du cours. Vous pouvez aussi demander une recherche web avec web_search ou "Busca en internet".',
+        sourcesTitle: 'Sources internet'
+    },
+    ca: {
+        unavailableTitle: 'Informacio no disponible en la documentacio',
+        unavailableBody: 'No trobe en la documentacio disponible informacio suficient per a respondre amb seguretat a la consulta:',
+        unavailableHint: 'Pot reformular la pregunta indicant el tema, modul, apartat o pagina concreta que vol consultar.',
+        externalTitle: 'Fora de la documentacio disponible',
+        externalBody: 'No puc respondre amb coneixement extern llevat que la cerca web estiga activada. La consulta no esta respaldada per la documentacio del curs:',
+        externalHint: 'Si vol una resposta basada en internet, active web_search o incloga "Busca en internet" en la peticio.',
+        smalltalk: 'Estic aci i preparat per a ajudar amb preguntes sobre la documentacio del curs.',
+        identity: 'Soc un tutor especialitzat a respondre consultes basades en la documentacio del curs. Puc localitzar, explicar i resumir informacio d aquesta font, i nomes use internet quan la cerca web esta activada.',
+        help: 'Puc ajudar a localitzar, explicar, resumir i estructurar informacio de la documentacio del curs. Tambe pot demanar cerca web activant web_search o incloent "Busca en internet".',
+        sourcesTitle: 'Fonts d internet'
+    },
+    gl: {
+        unavailableTitle: 'Informacion non disponibel na documentacion',
+        unavailableBody: 'Non atopo na documentacion disponibel informacion suficiente para responder con seguridade a consulta:',
+        unavailableHint: 'Pode reformular a pregunta indicando o tema, modulo, apartado ou paxina concreta que quere consultar.',
+        externalTitle: 'Fora da documentacion disponibel',
+        externalBody: 'Non podo responder con conecemento externo salvo que a busca web estea activada. A consulta non esta apoiada pola documentacion do curso:',
+        externalHint: 'Se quere unha resposta baseada en internet, active web_search ou inclua "Busca en internet" na peticion.',
+        smalltalk: 'Estou aqui e preparado para axudar con preguntas sobre a documentacion do curso.',
+        identity: 'Son un titor especializado en responder consultas baseadas na documentacion do curso. Podo localizar, explicar e resumir informacion desa fonte, e so uso internet cando a busca web esta activada.',
+        help: 'Podo axudar a localizar, explicar, resumir e estruturar informacion da documentacion do curso. Tamen pode pedir busca web activando web_search ou incluindo "Busca en internet".',
+        sourcesTitle: 'Fontes de internet'
+    },
+    de: {
+        unavailableTitle: 'Information in der Dokumentation nicht verfuegbar',
+        unavailableBody: 'In der verfuegbaren Dokumentation finde ich nicht genug Informationen, um diese Anfrage sicher zu beantworten:',
+        unavailableHint: 'Sie koennen die Frage mit Thema, Modul, Abschnitt oder konkreter Seite erneut formulieren.',
+        externalTitle: 'Ausserhalb der verfuegbaren Dokumentation',
+        externalBody: 'Ich kann nicht mit externem Wissen antworten, solange die Websuche nicht aktiviert ist. Die Anfrage wird nicht durch die Kursdokumentation gestuetzt:',
+        externalHint: 'Wenn Sie eine internetgestuetzte Antwort moechten, aktivieren Sie web_search oder fuegen Sie "Busca en internet" hinzu.',
+        smalltalk: 'Ich bin bereit, bei Fragen zur Kursdokumentation zu helfen.',
+        identity: 'Ich bin ein Tutor, der auf Antworten anhand der Kursdokumentation spezialisiert ist. Ich kann Informationen aus dieser Quelle finden, erklaeren und zusammenfassen und nutze das Internet nur bei aktivierter Websuche.',
+        help: 'Ich kann helfen, Informationen aus der Kursdokumentation zu finden, zu erklaeren, zusammenzufassen und zu strukturieren. Websuche ist mit web_search oder "Busca en internet" moeglich.',
+        sourcesTitle: 'Internetquellen'
+    },
+    it: {
+        unavailableTitle: 'Informazione non disponibile nella documentazione',
+        unavailableBody: 'Non trovo nella documentazione disponibile informazioni sufficienti per rispondere con sicurezza alla richiesta:',
+        unavailableHint: 'Puoi riformulare la domanda indicando tema, modulo, sezione o pagina concreta da consultare.',
+        externalTitle: 'Fuori dalla documentazione disponibile',
+        externalBody: 'Non posso rispondere con conoscenza esterna se la ricerca web non e attiva. La richiesta non e supportata dalla documentazione del corso:',
+        externalHint: 'Se vuoi una risposta basata su internet, attiva web_search o includi "Busca en internet" nella richiesta.',
+        smalltalk: 'Sono qui e pronto ad aiutarti con domande sulla documentazione del corso.',
+        identity: 'Sono un tutor specializzato nel rispondere a domande basate sulla documentazione del corso. Posso trovare, spiegare e riassumere informazioni da quella fonte, e uso internet solo quando la ricerca web e attiva.',
+        help: 'Posso aiutarti a trovare, spiegare, riassumere e strutturare informazioni dalla documentazione del corso. Puoi anche richiedere la ricerca web con web_search o "Busca en internet".',
+        sourcesTitle: 'Fonti internet'
+    }
+};
+
+const getLocalizedCopy = (responseLanguage = LANGUAGE_PROFILES.es) => (
+    localizedCopy[responseLanguage.localeHint] || localizedCopy.en
+);
+
+export const createInsufficientContextResponse = (prompt, responseLanguage = detectResponseLanguage(prompt)) => {
     const question = escapeResponseText(prompt);
-    return `<section><h2>Informacion no disponible en la documentacion</h2><p>No encuentro en la documentacion disponible informacion suficiente para responder con seguridad a la consulta: <strong>${question}</strong>.</p><p>Puede reformular la pregunta indicando el tema, modulo, apartado o pagina concreta que quiere consultar.</p></section>`;
+    const copy = getLocalizedCopy(responseLanguage);
+    return `<section><h2>${copy.unavailableTitle}</h2><p>${copy.unavailableBody} <strong>${question}</strong>.</p><p>${copy.unavailableHint}</p></section>`;
+};
+
+export const createExternalKnowledgeResponse = (prompt, responseLanguage = detectResponseLanguage(prompt)) => {
+    const question = escapeResponseText(prompt);
+    const copy = getLocalizedCopy(responseLanguage);
+    return `<section><h2>${copy.externalTitle}</h2><p>${copy.externalBody} <strong>${question}</strong>.</p><p>${copy.externalHint}</p></section>`;
+};
+
+const createSmalltalkResponse = (responseLanguage) => {
+    const copy = getLocalizedCopy(responseLanguage);
+    return `<section><p>${copy.smalltalk}</p></section>`;
+};
+
+const createIdentityResponse = (responseLanguage) => {
+    const copy = getLocalizedCopy(responseLanguage);
+    return `<section><p>${copy.identity}</p></section>`;
+};
+
+const createHelpResponse = (responseLanguage) => {
+    const copy = getLocalizedCopy(responseLanguage);
+    return `<section><p>${copy.help}</p></section>`;
+};
+
+export const classifyTutorPrompt = (prompt) => {
+    const normalized = normalizeForDetection(stripExplicitLanguageInstruction(prompt));
+
+    if (/^(?:hi|hello|hey|hola|buenas|ol[aá]|oi|bonjour|salut|ciao|hallo)(?:[!.? ]+)?$/i.test(normalized)
+        || /\b(?:how are u|how are you|como estas|como esta|comment ca va|comment allez vous|come stai|wie geht)\b/i.test(normalized)
+        || /^(?:thanks|thank you|gracias|obrigad[oa]|merci|danke|grazie)\b/i.test(normalized)
+        || /^(?:bye|goodbye|adios|adeus|au revoir|ciao)\b/i.test(normalized)) {
+        return 'smalltalk';
+    }
+
+    if (/\b(?:who are you|what are you|quien eres|que eres|qual es|qual e|quem es|qui es tu|wer bist du|chi sei|identidad|funcion|funcao)\b/i.test(normalized)) {
+        return 'identity';
+    }
+
+    if (/\b(?:what can you do|how can you help|como me puedes ayudar|que puedes hacer|que sabes hacer|como podes ajudar|comment peux tu aider|was kannst du|cosa puoi fare|ayuda|help)\b/i.test(normalized)) {
+        return 'help';
+    }
+
+    if (isStructuralQuestion(prompt)
+        || /\b(?:documentacion|documentation|documentacao|documentacio|documentazione|dokumentation|curso|course|cours|corso|kurs|modulo|module|tema|unidad|unit|section|seccion|apartado|pagina|page|manual|qdrant|contenido|content|material|resumen|summary|exam|examen|exercise|ejercicio)\b/i.test(normalized)) {
+        return 'documentary';
+    }
+
+    if (/\b(?:capital|president|presidente|weather|clima|today|actualidad|news|noticias|define|definition|what is|who is|when is|where is|cuanto es|calculate|calcula|programming|javascript|python)\b/i.test(normalized)) {
+        return 'external_knowledge';
+    }
+
+    return 'documentary';
 };
 
 export const isAmbiguousDocumentQuestion = ({ prompt, explicitPages = [], lexicalChunks = [], structuralQuestion = false }) => {
@@ -730,7 +1033,7 @@ const buildContext = ({ collectionSummaryContext = '', structuralContext = '', e
     return finalContexts.join('\n');
 };
 
-const getInstructions = async ({ curso, context }) => {
+const getInstructions = async ({ curso, context, responseLanguage = LANGUAGE_PROFILES.es }) => {
     let instructionsTemplate;
 
     try {
@@ -744,6 +1047,14 @@ const getInstructions = async ({ curso, context }) => {
         .replace(/{curso}/g, curso)
         .replace(/{context}/g, context);
 
+    const languageRule = `
+
+RESPONSE LANGUAGE
+
+Reply in: ${responseLanguage.languageName}.
+If the user mixes languages, keep this response language unless the user explicitly requests another language.
+Always keep the response as valid HTML.`;
+
     const ragRule = context.includes('MEMORIA DOCUMENTAL DE LA COLECCION QDRANT')
         ? `
 
@@ -755,10 +1066,10 @@ Si el contexto recuperado no respalda una afirmacion, no la afirmes: indica que 
         : '';
 
     if (!context.includes('ESTRUCTURA OFICIAL DETECTADA EN LA COLECCION')) {
-        return `${instructions}${ragRule}`;
+        return `${instructions}${languageRule}${ragRule}`;
     }
 
-    return `${instructions}${ragRule}
+    return `${instructions}${languageRule}${ragRule}
 
 REGLA PRIORITARIA SOBRE ESTRUCTURA DE CURSO
 
@@ -767,8 +1078,8 @@ No digas que solo existe un modulo, unidad o manual basandote en fragmentos vect
 Las practicas MP deben distinguirse de los modulos formativos MF, salvo que el usuario pida incluir todo.`;
 };
 
-const getWebInstructions = async ({ curso, context }) => {
-    const instructions = await getInstructions({ curso, context });
+const getWebInstructions = async ({ curso, context, responseLanguage = LANGUAGE_PROFILES.es }) => {
+    const instructions = await getInstructions({ curso, context, responseLanguage });
     return `${instructions}
 
 BUSQUEDA EXTERNA ACTIVADA
@@ -779,7 +1090,14 @@ Responde exclusivamente con HTML valido, sin Markdown.
 No anadas una seccion de fuentes: el sistema la incorporara automaticamente.`;
 };
 
-export const getWebResponse = async ({ curso, context, prompt, history = [], perplexityClient = perplexity }) => {
+export const getWebResponse = async ({
+    curso,
+    context,
+    prompt,
+    history = [],
+    responseLanguage = detectResponseLanguage(prompt),
+    perplexityClient = perplexity
+}) => {
     if (!perplexityClient) {
         throw createPublicError({
             name: 'WebSearchConfigurationError',
@@ -792,7 +1110,7 @@ export const getWebResponse = async ({ curso, context, prompt, history = [], per
         const chatCompletion = await perplexityClient.chat.completions.create({
             model: PERPLEXITY_MODEL,
             messages: [
-                { role: 'system', content: await getWebInstructions({ curso, context }) },
+                { role: 'system', content: await getWebInstructions({ curso, context, responseLanguage }) },
                 ...history,
                 { role: 'user', content: prompt }
             ]
@@ -804,7 +1122,7 @@ export const getWebResponse = async ({ curso, context, prompt, history = [], per
         const responseHtml = chatCompletion.choices[0]?.message?.content || 'No pude generar una respuesta.';
 
         return {
-            respuesta: appendWebSourcesHtml(responseHtml, sources),
+            respuesta: appendWebSourcesHtml(responseHtml, sources, responseLanguage),
             webSearchUsed: true,
             sources
         };
@@ -824,6 +1142,7 @@ export const getWebResponse = async ({ curso, context, prompt, history = [], per
 export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = [], webSearch = false }) => {
     const webSearchUsed = shouldUseWebSearch({ prompt, webSearch });
     const cleanPrompt = cleanWebSearchTrigger(prompt);
+    const responseLanguage = detectResponseLanguage(cleanPrompt || prompt);
     if (!cleanPrompt) {
         throw createPublicError({
             name: 'EmptyWebSearchPromptError',
@@ -837,6 +1156,41 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
             status: 503,
             publicMessage: WEB_SEARCH_NOT_CONFIGURED_MESSAGE
         });
+    }
+
+    const promptIntent = classifyTutorPrompt(cleanPrompt);
+    if (!webSearchUsed) {
+        if (promptIntent === 'smalltalk') {
+            return {
+                respuesta: createSmalltalkResponse(responseLanguage),
+                webSearchUsed: false,
+                sources: []
+            };
+        }
+
+        if (promptIntent === 'identity') {
+            return {
+                respuesta: createIdentityResponse(responseLanguage),
+                webSearchUsed: false,
+                sources: []
+            };
+        }
+
+        if (promptIntent === 'help') {
+            return {
+                respuesta: createHelpResponse(responseLanguage),
+                webSearchUsed: false,
+                sources: []
+            };
+        }
+
+        if (promptIntent === 'external_knowledge') {
+            return {
+                respuesta: createExternalKnowledgeResponse(cleanPrompt, responseLanguage),
+                webSearchUsed: false,
+                sources: []
+            };
+        }
     }
 
     const embeddingResponse = await openai.embeddings.create({
@@ -926,7 +1280,7 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
 
         if (ambiguousQuestion || !sufficientContext) {
             return {
-                respuesta: createInsufficientContextResponse(cleanPrompt),
+                respuesta: createInsufficientContextResponse(cleanPrompt, responseLanguage),
                 webSearchUsed: false,
                 sources: []
             };
@@ -946,11 +1300,12 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
             curso,
             context,
             prompt: cleanPrompt,
-            history: normalizedHistory
+            history: normalizedHistory,
+            responseLanguage
         });
     }
 
-    const systemInstruction = await getInstructions({ curso, context });
+    const systemInstruction = await getInstructions({ curso, context, responseLanguage });
     const chatCompletion = await openai.chat.completions.create({
         model: CHAT_MODEL,
         messages: [

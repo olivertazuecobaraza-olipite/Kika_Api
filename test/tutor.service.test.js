@@ -6,8 +6,11 @@ const {
     appendWebSourcesHtml,
     buildCollectionSummaryContext,
     buildStructuralContext,
+    classifyTutorPrompt,
     cleanWebSearchTrigger,
+    createExternalKnowledgeResponse,
     createInsufficientContextResponse,
+    detectResponseLanguage,
     extractTrainingCatalog,
     getTutorResponse,
     getWebResponse,
@@ -132,6 +135,69 @@ test('genera respuesta web con metadatos y fuentes visibles', async () => {
     assert.equal(response.sources.length, 1);
     assert.match(response.respuesta, /<p>Respuesta web<\/p>/);
     assert.match(response.respuesta, /<h3>Fuentes de internet<\/h3>/);
+});
+
+test('detecta idioma de respuesta por instruccion explicita e idioma principal', () => {
+    assert.deepEqual(
+        {
+            localeHint: detectResponseLanguage('how are u?').localeHint,
+            explicitOverride: detectResponseLanguage('how are u?').explicitOverride
+        },
+        { localeHint: 'en', explicitOverride: false }
+    );
+    assert.equal(detectResponseLanguage('olá, como estás?').localeHint, 'pt');
+    assert.equal(detectResponseLanguage('hello, explícame el módulo 1').localeHint, 'es');
+
+    const explicit = detectResponseLanguage('responde en francés: what can you do?');
+    assert.equal(explicit.localeHint, 'fr');
+    assert.equal(explicit.explicitOverride, true);
+});
+
+test('clasifica smalltalk, ayuda, identidad, documental y conocimiento externo', () => {
+    assert.equal(classifyTutorPrompt('how are u?'), 'smalltalk');
+    assert.equal(classifyTutorPrompt('who are you?'), 'identity');
+    assert.equal(classifyTutorPrompt('what can you do?'), 'help');
+    assert.equal(classifyTutorPrompt('what is the capital of France?'), 'external_knowledge');
+    assert.equal(classifyTutorPrompt('explain module 1'), 'documentary');
+    assert.equal(classifyTutorPrompt('explica el módulo 1'), 'documentary');
+});
+
+test('localiza respuestas sin contexto y bloquea conocimiento externo sin inventar', () => {
+    const response = createInsufficientContextResponse('capital of France <test>', detectResponseLanguage('capital of France'));
+    assert.match(response, /Information not available/);
+    assert.match(response, /&lt;test&gt;/);
+    assert.doesNotMatch(response, /Informacion no disponible/);
+    assert.doesNotMatch(response, /Paris/i);
+
+    const external = createExternalKnowledgeResponse('what is the capital of France?', detectResponseLanguage('what is the capital of France?'));
+    assert.match(external, /Outside the available documentation/);
+    assert.match(external, /web search/i);
+    assert.doesNotMatch(external, /Paris/i);
+});
+
+test('responde smalltalk sin consultar embeddings ni Qdrant', async () => {
+    const response = await getTutorResponse({
+        curso: 'curso',
+        vsIdQdrant: 'collection',
+        prompt: 'how are u?'
+    });
+
+    assert.equal(response.webSearchUsed, false);
+    assert.deepEqual(response.sources, []);
+    assert.match(response.respuesta, /I'm here and ready/);
+    assert.doesNotMatch(response.respuesta, /Informacion no disponible/);
+});
+
+test('bloquea conocimiento externo sin busqueda web antes del RAG', async () => {
+    const response = await getTutorResponse({
+        curso: 'curso',
+        vsIdQdrant: 'collection',
+        prompt: 'what is the capital of France?'
+    });
+
+    assert.equal(response.webSearchUsed, false);
+    assert.match(response.respuesta, /Outside the available documentation/);
+    assert.doesNotMatch(response.respuesta, /Paris/i);
 });
 
 test('detecta preguntas estructurales del curso', () => {

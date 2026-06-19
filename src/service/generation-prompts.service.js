@@ -8,6 +8,7 @@ const buildBaseInstructions = () => [
     'Usa solo fragmentos semanticos como <section>, <h2>, <h3>, <p>, <ul>, <ol> y <li>.',
     'No incluyas <html>, <head>, <body>, estilos inline, scripts ni bloques de codigo.',
     'Estructura la respuesta para que se pueda insertar directamente en el chat del frontend.',
+    'Idioma de respuesta: usa el idioma principal del tema solicitado o el idioma indicado explicitamente por el usuario.',
     'Basate en la documentacion recuperada de Qdrant. Si no hay contexto suficiente, devuelve un bloque HTML claro indicando que falta informacion documental.'
 ].join('\n');
 
