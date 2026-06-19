@@ -6,6 +6,15 @@ const DEFAULT_TITLE = 'Nueva conversación';
 const MAX_HISTORY_MESSAGES = Number(process.env.MAX_HISTORY_MESSAGES || 12);
 const MAX_CONVERSATION_TITLE_LENGTH = Number(process.env.MAX_CONVERSATION_TITLE_LENGTH || 80);
 
+const escapeHtml = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const createErrorHtml = (message) => `<section><h2>Error</h2><p>${escapeHtml(message)}</p></section>`;
+
 const getUserId = (req) => req.get('x-user-id');
 
 const serializeConversationCore = (conversation) => ({
@@ -176,7 +185,7 @@ export const sendConversationMessage = async (req, res) => {
 
         res.status(statusCode).json({
             conversation_id: conversation._id.toString(),
-            respuesta: respuestaError,
+            respuesta: createErrorHtml(respuestaError),
             web_search_used: false,
             fuentes: []
         });

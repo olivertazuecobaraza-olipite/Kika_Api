@@ -23,6 +23,9 @@ test('genera prompt de resumen con parametros y reglas HTML', () => {
     assert.match(prompt, /HTML valido/);
     assert.match(prompt, /sin Markdown/);
     assert.match(prompt, /No incluyas <html>, <head>, <body>/);
+    assert.match(prompt, /no anadas lineas en blanco entre etiquetas/);
+    assert.match(prompt, /No uses <br> para separar secciones/);
+    assert.match(prompt, /Evita parrafos vacios, etiquetas vacias/);
 });
 
 test('genera prompt de examen mixto con contadores y sin soluciones por defecto', () => {

@@ -2,6 +2,15 @@ import { generateConversationContent } from '../service/content-generation.servi
 
 const getUserId = (req) => req.get('x-user-id');
 
+const escapeHtml = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const createErrorHtml = (message) => `<section><h2>Error</h2><p>${escapeHtml(message)}</p></section>`;
+
 export const sendGenerationError = (res, error) => {
     const statusCode = Number.isInteger(error.status) && error.status >= 400 && error.status < 600
         ? error.status
@@ -11,7 +20,7 @@ export const sendGenerationError = (res, error) => {
         : `Error: ${error.publicMessage || 'La solicitud no se pudo procesar.'}`;
 
     return res.status(statusCode).json({
-        respuesta: respuestaError,
+        respuesta: createErrorHtml(respuestaError),
         web_search_used: false,
         fuentes: []
     });

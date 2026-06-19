@@ -156,10 +156,16 @@ test('detecta idioma de respuesta por instruccion explicita e idioma principal',
 test('clasifica smalltalk, ayuda, identidad, documental y conocimiento externo', () => {
     assert.equal(classifyTutorPrompt('how are u?'), 'smalltalk');
     assert.equal(classifyTutorPrompt('who are you?'), 'identity');
+    assert.equal(classifyTutorPrompt('who are u?'), 'identity');
+    assert.equal(classifyTutorPrompt('who r u'), 'identity');
     assert.equal(classifyTutorPrompt('what can you do?'), 'help');
+    assert.equal(classifyTutorPrompt('what can u do?'), 'help');
+    assert.equal(classifyTutorPrompt('como te uso?'), 'help');
     assert.equal(classifyTutorPrompt('what is the capital of France?'), 'external_knowledge');
-    assert.equal(classifyTutorPrompt('explain module 1'), 'documentary');
-    assert.equal(classifyTutorPrompt('explica el módulo 1'), 'documentary');
+    assert.equal(classifyTutorPrompt('explica el modulo 1'), 'course_documentary');
+    assert.equal(classifyTutorPrompt('explain module 1'), 'course_documentary');
+    assert.equal(classifyTutorPrompt('explica el módulo 1'), 'course_documentary');
+    assert.equal(classifyTutorPrompt('eso'), 'ambiguous');
 });
 
 test('localiza respuestas sin contexto y bloquea conocimiento externo sin inventar', () => {
@@ -186,6 +192,44 @@ test('responde smalltalk sin consultar embeddings ni Qdrant', async () => {
     assert.deepEqual(response.sources, []);
     assert.match(response.respuesta, /I'm here and ready/);
     assert.doesNotMatch(response.respuesta, /Informacion no disponible/);
+});
+
+test('responde identidad abreviada sin consultar embeddings ni Qdrant', async () => {
+    const response = await getTutorResponse({
+        curso: 'curso',
+        vsIdQdrant: 'collection',
+        prompt: 'who are u?'
+    });
+
+    assert.equal(response.webSearchUsed, false);
+    assert.deepEqual(response.sources, []);
+    assert.match(response.respuesta, /I am Kika/);
+    assert.doesNotMatch(response.respuesta, /Information not available in the documentation/);
+});
+
+test('responde ayuda informal sin consultar embeddings ni Qdrant', async () => {
+    const response = await getTutorResponse({
+        curso: 'curso',
+        vsIdQdrant: 'collection',
+        prompt: 'como te uso?'
+    });
+
+    assert.equal(response.webSearchUsed, false);
+    assert.deepEqual(response.sources, []);
+    assert.match(response.respuesta, /Como puedo ayudar/);
+    assert.doesNotMatch(response.respuesta, /Informacion no disponible/);
+});
+
+test('pide precision para referencias ambiguas sin consultar embeddings ni Qdrant', async () => {
+    const response = await getTutorResponse({
+        curso: 'curso',
+        vsIdQdrant: 'collection',
+        prompt: 'eso'
+    });
+
+    assert.equal(response.webSearchUsed, false);
+    assert.deepEqual(response.sources, []);
+    assert.match(response.respuesta, /Necesito mas precision/);
 });
 
 test('bloquea conocimiento externo sin busqueda web antes del RAG', async () => {

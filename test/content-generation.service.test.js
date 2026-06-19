@@ -5,7 +5,8 @@ process.env.OPENAI_API_KEY ||= 'test-openai-api-key';
 
 const {
     buildUserGenerationMessage,
-    generateConversationContent
+    generateConversationContent,
+    normalizeGeneratedHtml
 } = await import('../src/service/content-generation.service.js');
 
 const createMessageModel = ({ previousMessages = [] } = {}) => {
@@ -43,6 +44,28 @@ test('construye mensaje de usuario legible para generacion', () => {
     assert.equal(
         buildUserGenerationMessage('resumen', { tema: 'Comunicacion' }),
         'Generar resumen: Comunicacion'
+    );
+});
+
+test('normaliza HTML generado eliminando saltos entre etiquetas', () => {
+    assert.equal(
+        normalizeGeneratedHtml('<section>\n\n<h2>T</h2>\n\n<p>A</p>\n</section>'),
+        '<section><h2>T</h2><p>A</p></section>'
+    );
+    assert.equal(
+        normalizeGeneratedHtml('<section><h2>T</h2><p>A</p></section>'),
+        '<section><h2>T</h2><p>A</p></section>'
+    );
+});
+
+test('envuelve texto plano generado y lo escapa', () => {
+    assert.equal(
+        normalizeGeneratedHtml('Respuesta simple'),
+        '<section><p>Respuesta simple</p></section>'
+    );
+    assert.equal(
+        normalizeGeneratedHtml('2 < 3 & 4 > 1'),
+        '<section><p>2 &lt; 3 &amp; 4 &gt; 1</p></section>'
     );
 });
 
@@ -109,7 +132,7 @@ test('guarda mensajes, actualiza conversacion y devuelve respuesta comun', async
             getTutorResponse: async (input) => {
                 tutorInput = input;
                 return {
-                    respuesta: '<section><h2>Ejercicio</h2></section>',
+                    respuesta: '<section>\n\n<h2>Ejercicio</h2>\n\n<p>Practica guiada</p>\n</section>',
                     webSearchUsed: false,
                     sources: []
                 };
@@ -121,6 +144,7 @@ test('guarda mensajes, actualiza conversacion y devuelve respuesta comun', async
     assert.equal(MessageModel.created[0].role, 'user');
     assert.equal(MessageModel.created[0].content, 'Generar ejercicio: Caja');
     assert.equal(MessageModel.created[1].role, 'assistant');
+    assert.equal(MessageModel.created[1].content, '<section><h2>Ejercicio</h2><p>Practica guiada</p></section>');
     assert.equal(tutorInput.curso, 'COMT013PO');
     assert.equal(tutorInput.vsIdQdrant, 'vs_test');
     assert.equal(tutorInput.webSearch, false);
@@ -131,7 +155,7 @@ test('guarda mensajes, actualiza conversacion y devuelve respuesta comun', async
     assert.deepEqual(response, {
         conversation_id: conversation._id,
         tipo_generacion: 'ejercicio',
-        respuesta: '<section><h2>Ejercicio</h2></section>',
+        respuesta: '<section><h2>Ejercicio</h2><p>Practica guiada</p></section>',
         web_search_used: false,
         fuentes: []
     });
