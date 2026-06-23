@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { openai } from '../../config/openai.js';
 import { perplexity } from '../../config/perplexity.js';
 import { qdrant } from '../../config/qdrant.js';
+import { normalizeAssistantHtml } from './normalizeAssistantHtml.use-case.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -212,23 +213,6 @@ const escapeHtml = (value) => String(value)
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-
-const HTML_FRAGMENT_TAG_REGEX = /<\/?(?:section|article|div|p|h[1-6]|ul|ol|li|table|thead|tbody|tr|th|td|strong|em|blockquote|pre|code|a|span|br)\b/i;
-
-const normalizeAssistantHtml = (value, fallbackText = 'No pude generar una respuesta.') => {
-    const raw = String(value || '').trim() || fallbackText;
-    if (HTML_FRAGMENT_TAG_REGEX.test(raw)) return raw;
-
-    const paragraphs = raw
-        .split(/\n{2,}/)
-        .map(paragraph => paragraph.replace(/\s*\n\s*/g, ' ').trim())
-        .filter(Boolean);
-    const content = (paragraphs.length > 0 ? paragraphs : [fallbackText])
-        .map(paragraph => `<p>${escapeHtml(paragraph)}</p>`)
-        .join('');
-
-    return `<section>${content}</section>`;
-};
 
 export const normalizeWebSources = ({ citations = [], searchResults = [] } = {}) => {
     const resultsByUrl = new Map(
@@ -1189,9 +1173,10 @@ export const getWebResponse = async ({
             searchResults: chatCompletion.search_results
         });
         const responseHtml = normalizeAssistantHtml(chatCompletion.choices[0]?.message?.content);
+        const responseWithSources = appendWebSourcesHtml(responseHtml, sources, responseLanguage);
 
         return {
-            respuesta: appendWebSourcesHtml(responseHtml, sources, responseLanguage),
+            respuesta: normalizeAssistantHtml(responseWithSources),
             webSearchUsed: true,
             sources
         };

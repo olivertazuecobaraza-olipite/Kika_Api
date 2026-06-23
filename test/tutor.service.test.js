@@ -18,8 +18,28 @@ const {
     isAmbiguousDocumentQuestion,
     isStructuralQuestion,
     normalizeWebSources,
+    normalizeAssistantHtml,
     shouldUseWebSearch
 } = await import('../src/service/tutor.service.js');
+
+test('compacta HTML conversacional sin alterar contenido semantico', () => {
+    assert.equal(
+        normalizeAssistantHtml('<section>\n\t<h2>Titulo</h2>\n\n<p>Primera\nlinea</p><p> &nbsp; <br> </p><ul>\n<li><strong>Uno</strong> y <em>dos</em></li>\n</ul><p>A<br><br/>B</p>\n</section>'),
+        '<section><h2>Titulo</h2><p>Primera linea</p><ul><li><strong>Uno</strong> y <em>dos</em></li></ul><p>A<br>B</p></section>'
+    );
+
+    assert.equal(
+        normalizeAssistantHtml('<section><table>\n<tr><th>Clave</th><td><a href="https://example.com">Valor</a></td></tr>\n</table></section>'),
+        '<section><table><tr><th>Clave</th><td><a href="https://example.com">Valor</a></td></tr></table></section>'
+    );
+});
+
+test('usa fallback compacto cuando la respuesta esta vacia', () => {
+    assert.equal(
+        normalizeAssistantHtml(''),
+        '<section><p>No pude generar una respuesta.</p></section>'
+    );
+});
 
 test('activa busqueda web por frase incluida sin distinguir mayusculas', () => {
     assert.equal(shouldUseWebSearch({ prompt: 'Explica esto. BUSCA EN INTERNET ahora.' }), true);
@@ -119,7 +139,7 @@ test('genera respuesta web con metadatos y fuentes visibles', async () => {
                 create: async () => ({
                     citations: ['https://example.com/a'],
                     search_results: [{ title: 'Fuente A', url: 'https://example.com/a' }],
-                    choices: [{ message: { content: '<p>Respuesta web</p>' } }]
+                    choices: [{ message: { content: '<section>\n\n<p>Respuesta web</p>\n</section>' } }]
                 })
             }
         }
@@ -135,6 +155,7 @@ test('genera respuesta web con metadatos y fuentes visibles', async () => {
     assert.equal(response.sources.length, 1);
     assert.match(response.respuesta, /<p>Respuesta web<\/p>/);
     assert.match(response.respuesta, /<h3>Fuentes de internet<\/h3>/);
+    assert.doesNotMatch(response.respuesta, /[\r\n\t]/);
 });
 
 test('detecta idioma de respuesta por instruccion explicita e idioma principal', () => {

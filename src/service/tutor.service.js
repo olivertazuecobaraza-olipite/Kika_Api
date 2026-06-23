@@ -15,3 +15,4 @@ export { hasSufficientDocumentContext } from '../use-cases/tutor/hasSufficientDo
 export { invalidateCollectionCache } from '../use-cases/tutor/invalidateCollectionCache.use-case.js';
 export { getWebResponse } from '../use-cases/tutor/getWebResponse.use-case.js';
 export { getTutorResponse } from '../use-cases/tutor/getTutorResponse.use-case.js';
+export { normalizeAssistantHtml } from '../use-cases/tutor/normalizeAssistantHtml.use-case.js';

@@ -5,9 +5,9 @@ process.env.OPENAI_API_KEY ||= 'test-openai-api-key';
 
 const {
     buildUserGenerationMessage,
-    generateConversationContent,
-    normalizeGeneratedHtml
+    generateConversationContent
 } = await import('../src/service/content-generation.service.js');
+const { normalizeAssistantHtml } = await import('../src/service/tutor.service.js');
 
 const createMessageModel = ({ previousMessages = [] } = {}) => {
     const created = [];
@@ -49,22 +49,22 @@ test('construye mensaje de usuario legible para generacion', () => {
 
 test('normaliza HTML generado eliminando saltos entre etiquetas', () => {
     assert.equal(
-        normalizeGeneratedHtml('<section>\n\n<h2>T</h2>\n\n<p>A</p>\n</section>'),
+        normalizeAssistantHtml('<section>\n\n<h2>T</h2>\n\n<p>A</p>\n</section>'),
         '<section><h2>T</h2><p>A</p></section>'
     );
     assert.equal(
-        normalizeGeneratedHtml('<section><h2>T</h2><p>A</p></section>'),
+        normalizeAssistantHtml('<section><h2>T</h2><p>A</p></section>'),
         '<section><h2>T</h2><p>A</p></section>'
     );
 });
 
 test('envuelve texto plano generado y lo escapa', () => {
     assert.equal(
-        normalizeGeneratedHtml('Respuesta simple'),
+        normalizeAssistantHtml('Respuesta simple'),
         '<section><p>Respuesta simple</p></section>'
     );
     assert.equal(
-        normalizeGeneratedHtml('2 < 3 & 4 > 1'),
+        normalizeAssistantHtml('2 < 3 & 4 > 1'),
         '<section><p>2 &lt; 3 &amp; 4 &gt; 1</p></section>'
     );
 });
@@ -132,7 +132,7 @@ test('guarda mensajes, actualiza conversacion y devuelve respuesta comun', async
             getTutorResponse: async (input) => {
                 tutorInput = input;
                 return {
-                    respuesta: '<section>\n\n<h2>Ejercicio</h2>\n\n<p>Practica guiada</p>\n</section>',
+                    respuesta: '<section><h2>Ejercicio</h2><p>Practica guiada</p></section>',
                     webSearchUsed: false,
                     sources: []
                 };

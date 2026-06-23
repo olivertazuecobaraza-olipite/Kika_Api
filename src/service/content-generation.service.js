@@ -21,30 +21,6 @@ const titlePrefixes = {
     ejercicio: 'Ejercicio'
 };
 
-const HTML_FRAGMENT_TAG_REGEX = /<\/?(?:section|h[2-3]|p|ul|ol|li|table|thead|tbody|tr|th|td|strong|em|a|span|br)\b/i;
-
-const escapeHtml = (value) => String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-export const normalizeGeneratedHtml = (value) => {
-    const raw = String(value || '').trim();
-    if (!raw) return '<section><p>No pude generar una respuesta.</p></section>';
-
-    if (!HTML_FRAGMENT_TAG_REGEX.test(raw)) {
-        return `<section><p>${escapeHtml(raw.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' '))}</p></section>`;
-    }
-
-    return raw
-        .replace(/[\r\n\t]+/g, ' ')
-        .replace(/>\s+</g, '><')
-        .replace(/ {2,}/g, ' ')
-        .trim();
-};
-
 export const buildUserGenerationMessage = (type, payload) => (
     `Generar ${type}: ${payload.tema}`
 );
@@ -122,17 +98,12 @@ export const generateConversationContent = async ({
         history,
         webSearch
     });
-    const normalizedTutorResponse = {
-        ...tutorResponse,
-        respuesta: normalizeGeneratedHtml(tutorResponse.respuesta)
-    };
-
     const assistantMessage = await MessageModel.create({
         conversationId: conversation._id,
         role: 'assistant',
-        content: normalizedTutorResponse.respuesta,
-        webSearchUsed: normalizedTutorResponse.webSearchUsed,
-        sources: normalizedTutorResponse.sources
+        content: tutorResponse.respuesta,
+        webSearchUsed: tutorResponse.webSearchUsed,
+        sources: tutorResponse.sources
     });
 
     const updates = {
@@ -149,6 +120,6 @@ export const generateConversationContent = async ({
     return serializeGenerationResponse({
         conversationId: conversation._id,
         type,
-        tutorResponse: normalizedTutorResponse
+        tutorResponse
     });
 };
