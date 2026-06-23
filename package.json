@@ -2,12 +2,17 @@
   "name": "KIKA_API",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "src/server.js",
   "scripts": {
-    "dev": "nodemon src/app.js",
-    "start": "node src/app.js",
-    "check": "node --check src/app.js && node --check src/service/tutor.service.js && node --check src/service/content-generation.service.js && node --check src/service/generation-prompts.service.js && node --check src/service/qdrant-admin.service.js && node --check src/service/auth.service.js && node --check src/service/token-revocation.service.js && node --check src/service/license-registry.service.js && node --check src/service/license-issuer.service.js && node --check src/controllers/tutor.controller.js && node --check src/controllers/content-generation.controller.js && node --check src/controllers/qdrant-admin.controller.js && node --check src/controllers/conversation.controller.js && node --check src/routes/qdrant-admin.routes.js && node --check src/middlewares/validator.middleware.js && node --check src/middlewares/qdrant-admin.middleware.js && node --check src/middlewares/auth.middleware.js && node --check src/middlewares/auth-audit.middleware.js && node --check src/middlewares/rate-limit.middleware.js && node --check src/middlewares/security-headers.middleware.js && node --check src/middlewares/cors.middleware.js && node --check src/config/env.js && node --check src/config/auth.js && node --check src/config/perplexity.js && node --check src/models/conversation.model.js && node --check src/models/message.model.js && node --check src/models/interaction.model.js && node --check src/models/qdrant-collection.model.js && node --check src/models/revoked-token.model.js && node --check src/models/issued-token.model.js",
-    "test": "node --test test/*.test.js"
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "check": "node --check src/app.js && node --check src/server.js && node --check src/service/tutor.service.js && node --check src/service/content-generation.service.js && node --check src/service/generation-prompts.service.js && node --check src/service/qdrant-admin.service.js && node --check src/service/auth.service.js && node --check src/service/token-revocation.service.js && node --check src/service/license-registry.service.js && node --check src/service/license-issuer.service.js && node --check src/controllers/tutor.controller.js && node --check src/controllers/content-generation.controller.js && node --check src/controllers/qdrant-admin.controller.js && node --check src/controllers/conversation.controller.js && node --check src/routes/qdrant-admin.routes.js && node --check src/middlewares/validator.middleware.js && node --check src/middlewares/qdrant-admin.middleware.js && node --check src/middlewares/auth.middleware.js && node --check src/middlewares/auth-audit.middleware.js && node --check src/middlewares/rate-limit.middleware.js && node --check src/middlewares/security-headers.middleware.js && node --check src/middlewares/cors.middleware.js && node --check src/config/env.js && node --check src/config/auth.js && node --check src/config/openai.js && node --check src/config/perplexity.js && node --check src/models/conversation.model.js && node --check src/models/message.model.js && node --check src/models/interaction.model.js && node --check src/models/qdrant-collection.model.js && node --check src/models/revoked-token.model.js && node --check src/models/issued-token.model.js",
+    "test": "node --test test/*.test.js",
+    "test:unit": "node --test test/*.test.js",
+    "test:integration": "node --test test/integration/*.test.js",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-lines=64 --test-coverage-branches=77 --test-coverage-functions=62 --test test/*.test.js",
+    "test:smoke": "node --test test/smoke/*.test.js",
+    "test:all": "corepack pnpm run check && corepack pnpm run test:unit && corepack pnpm run test:integration"
   },
   "keywords": [],
   "author": "",

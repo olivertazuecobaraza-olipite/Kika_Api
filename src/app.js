@@ -1,8 +1,4 @@
-// src/app.js
-import 'dotenv/config';
 import express from 'express';
-import { validateEnv } from './config/env.js';
-import { connectDB } from './config/db.js';
 import tutorRoutes from './routes/tutor.routes.js';
 import qdrantAdminRoutes from './routes/qdrant-admin.routes.js';
 import { requireApiKey } from './middlewares/auth.middleware.js';
@@ -11,38 +7,28 @@ import { rateLimit } from './middlewares/rate-limit.middleware.js';
 import { securityHeaders } from './middlewares/security-headers.middleware.js';
 import { cors } from './middlewares/cors.middleware.js';
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+export const createApp = () => {
+    const app = express();
 
-// Middlewares Globales
-app.disable('x-powered-by');
-app.use(securityHeaders);
-app.use(cors);
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '32kb' }));
+    app.disable('x-powered-by');
+    app.use(securityHeaders);
+    app.use(cors);
+    app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '32kb' }));
 
-// Montar Rutas de la API
-app.use('/api/tutor/qdrant', rateLimit, requireApiKey, auditAuthenticatedRequest, qdrantAdminRoutes);
-app.use('/api/tutor', rateLimit, requireApiKey, auditAuthenticatedRequest, tutorRoutes);
+    app.use('/api/tutor/qdrant', rateLimit, requireApiKey, auditAuthenticatedRequest, qdrantAdminRoutes);
+    app.use('/api/tutor', rateLimit, requireApiKey, auditAuthenticatedRequest, tutorRoutes);
 
-app.use((err, req, res, next) => {
-    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
-        return res.status(400).json({ error: 'JSON invalido.' });
-    }
-    if (err?.name === 'MulterError') {
-        return res.status(400).json({ error: 'Fichero invalido o limite de subida excedido.' });
-    }
-    next(err);
-});
-
-// Conectar a la Base de Datos antes de levantar el servidor
-try {
-    validateEnv();
-    await connectDB();
-    // Iniciar Servidor
-    app.listen(PORT, () => {
-        console.log(`Servidor corriendo en el puerto ${PORT}`);
+    app.use((err, req, res, next) => {
+        if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+            return res.status(400).json({ error: 'JSON invalido.' });
+        }
+        if (err?.name === 'MulterError') {
+            return res.status(400).json({ error: 'Fichero invalido o limite de subida excedido.' });
+        }
+        next(err);
     });
-} catch (error) {
-    console.error('Error al inicializar la aplicación:', error);
-    process.exit(1);
-}
+
+    return app;
+};
+
+export default createApp;

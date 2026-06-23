@@ -117,6 +117,19 @@ Comprobacion de sintaxis:
 pnpm run check
 ```
 
+## Testing
+
+La suite separa pruebas unitarias, cobertura e integración con servicios locales dedicados:
+
+```bash
+pnpm run test:unit
+pnpm run test:integration
+pnpm run test:coverage
+pnpm run test:all
+```
+
+La configuración segura de MongoDB/Qdrant, la matriz automatizada y la checklist manual del frontend están documentadas en [TESTING.md](./TESTING.md).
+
 ## Endpoints
 
 La API se monta bajo:

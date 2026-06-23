@@ -1,7 +1,8 @@
 {
   "info": {
     "name": "Kika API - Conversaciones con memoria",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Smoke funcional de la API: legacy, conversaciones, seguridad, generadores y administracion Qdrant. Usa datos exclusivos de test y ejecuta siempre la carpeta Limpieza. La matriz completa y el recorrido manual estan en TESTING.md."
   },
   "item": [
     {
