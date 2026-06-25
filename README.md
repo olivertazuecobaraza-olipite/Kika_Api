@@ -1,17 +1,19 @@
 # KIKA API
 
-API de tutor conversacional para cursos. Recibe preguntas de estudiantes, recupera contexto oficial desde Qdrant y genera respuestas pedagogicas en espanol con OpenAI. Tambien permite crear conversaciones con memoria, separadas por usuario, y persistidas en MongoDB.
+API de tutor conversacional para cursos. Recibe preguntas de estudiantes, recupera contexto documental desde Qdrant y genera respuestas pedagogicas en espanol con OpenAI. Tambien permite mantener conversaciones con historial por usuario, generar resumenes, examenes y ejercicios, y administrar colecciones documentales en Qdrant.
 
 ## Funcionalidades
 
-- Tutor legacy sin memoria mediante `POST /api/tutor/ask`.
-- Conversaciones con historial mediante `/api/tutor/conversations`.
-- Separacion de conversaciones por cabecera `x-user-id`.
-- Recuperacion de contexto documental desde Qdrant.
-- Generacion de respuestas con OpenAI.
-- Busqueda web opcional mediante Perplexity Sonar.
-- Persistencia de interacciones, conversaciones y mensajes en MongoDB.
-- Validacion de entradas, autenticacion JWT expirable con migracion desde API key, rate limiting y cabeceras de seguridad.
+- Tutor sin memoria mediante `POST /api/tutor/ask`.
+- Conversaciones persistidas con historial mediante `/api/tutor/conversations`.
+- Separacion de conversaciones por usuario con la cabecera `x-user-id`.
+- Recuperacion de contexto desde colecciones de Qdrant.
+- Respuestas generadas con OpenAI.
+- Busqueda web opcional con Perplexity Sonar.
+- Generacion de resumenes, examenes y ejercicios desde una conversacion.
+- Administracion de colecciones y ficheros en Qdrant.
+- Persistencia en MongoDB.
+- Autenticacion por token, validacion de entradas, rate limiting, CORS y cabeceras de seguridad.
 
 ## Requisitos
 
@@ -20,6 +22,7 @@ API de tutor conversacional para cursos. Recibe preguntas de estudiantes, recupe
 - MongoDB.
 - Qdrant.
 - API key de OpenAI.
+- Token de acceso para consumir la API.
 
 ## Instalacion
 
@@ -41,10 +44,19 @@ Variables principales:
 PORT=3000
 NODE_ENV=development
 CORS_ALLOWED_ORIGINS=https://moodle.example
+
 MONGO_URI=mongodb://localhost:2017/tutor_db
+
 OPENAI_API_KEY=tu_api_key_aqui
+OPENAI_CHAT_MODEL=gpt-4.1-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+
 QDRANT_URL=http://localhost:6333
 QDRANT_API_KEY=tu_qdrant_key_si_tiene
+
+PERPLEXITY_API_KEY=
+PERPLEXITY_MODEL=sonar
+
 AUTH_MODE=legacy
 API_KEY=clave_estatica_solo_para_transicion
 JWT_ISSUER=kika-token-service
@@ -52,50 +64,35 @@ JWT_AUDIENCE=kika-api
 JWT_MAX_TTL_SECONDS=31622400
 JWT_CLOCK_TOLERANCE_SECONDS=30
 JWT_PUBLIC_KEYS_JSON={"kika-2026-01":"<clave_publica_pem_codificada_en_base64>"}
-OPENAI_CHAT_MODEL=gpt-4o-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-PERPLEXITY_API_KEY=tu_api_key_de_perplexity_aqui
-PERPLEXITY_MODEL=sonar
 ```
 
-La autenticacion se migra gradualmente mediante `AUTH_MODE`:
+Consulta `.env.example` para ver el resto de limites de contexto, cache, subida de ficheros, rate limiting y pruebas.
 
-- `legacy`: solo acepta `x-api-key`.
-- `hybrid`: acepta JWT Bearer y temporalmente `x-api-key`.
-- `jwt`: solo acepta JWT Bearer.
+## Autenticacion y token
 
-El contrato objetivo para todas las peticiones es:
+Para usar la API se necesita un token de acceso. Todas las peticiones deben enviarlo en la cabecera:
 
 ```http
 Authorization: Bearer <token>
 ```
 
-Los endpoints conversacionales requieren ademas:
+El token debe tratarse como un secreto: no lo subas al repositorio, no lo incluyas en tickets publicos y no lo compartas en capturas. Si caduca o se filtra, solicita uno nuevo al administrador de la API.
+
+La API permite tres modos de autenticacion durante una migracion:
+
+- `legacy`: acepta `x-api-key`.
+- `hybrid`: acepta `Authorization: Bearer <token>` y temporalmente `x-api-key`.
+- `jwt`: acepta solo `Authorization: Bearer <token>`.
+
+El modo recomendado para clientes nuevos es usar siempre `Authorization: Bearer <token>`.
+
+Los endpoints conversacionales requieren ademas la cabecera:
 
 ```http
 x-user-id: usuario_123
 ```
 
-Si el frontend llama a la API directamente desde el navegador, configura
-`CORS_ALLOWED_ORIGINS` con el origen exacto de Moodle, sin ruta final. Para
-permitir varios origenes, separalos con comas:
-
-```env
-CORS_ALLOWED_ORIGINS=https://campus.example,https://campus-staging.example
-```
-
-El JWT identifica a la aplicacion consumidora mediante `sub`. La cabecera
-`x-user-id` sigue identificando al usuario final y separando sus conversaciones.
-Cada token incluye un `jti` unico para permitir su revocacion anticipada.
-
-## Uso del token
-
-Cada cliente recibe una credencial individual por un canal privado. El token
-debe tratarse como un secreto y no debe incluirse en repositorios, tickets
-publicos ni capturas compartidas.
-
-Si el token caduca o se filtra, solicita una renovacion al administrador de la
-API. Los clientes no generan ni renuevan tokens por su cuenta.
+`Authorization` identifica al cliente que consume la API. `x-user-id` identifica al usuario final y separa sus conversaciones.
 
 ## Ejecucion
 
@@ -117,9 +114,7 @@ Comprobacion de sintaxis:
 pnpm run check
 ```
 
-## Testing
-
-La suite separa pruebas unitarias, cobertura e integración con servicios locales dedicados:
+## Pruebas
 
 ```bash
 pnpm run test:unit
@@ -128,7 +123,7 @@ pnpm run test:coverage
 pnpm run test:all
 ```
 
-La configuración segura de MongoDB/Qdrant, la matriz automatizada y la checklist manual del frontend están documentadas en [TESTING.md](./TESTING.md).
+La configuracion de MongoDB/Qdrant para pruebas, la matriz automatizada y la checklist manual del frontend estan documentadas en [TESTING.md](./TESTING.md).
 
 ## Endpoints
 
@@ -144,9 +139,7 @@ La API se monta bajo:
 POST /api/tutor/ask
 ```
 
-Este endpoint mantiene el contrato legacy. No usa historial conversacional.
-
-Ejemplo:
+No usa historial conversacional.
 
 ```bash
 curl -X POST http://localhost:3000/api/tutor/ask \
@@ -173,30 +166,13 @@ Respuesta:
 }
 ```
 
-Para complementar la documentacion interna con una busqueda web, incluye la frase
-`Busca en internet` dentro de `prompt` o envia `web_search: true`. La frase se
-mantiene por compatibilidad y el booleano permite integrar un boton en el frontend:
-
-```json
-{
-  "course id": "790",
-  "curso": "COMT013PO",
-  "vs_id_QDRANT": "vs_69d3542f0a848191aab05cbae571122a",
-  "prompt": "Cuales son las novedades recientes sobre este tema?",
-  "web_search": true
-}
-```
-
-Las respuestas web incluyen `web_search_used: true`, una seccion HTML con enlaces
-y el array estructurado `fuentes`.
+Para complementar la respuesta con busqueda web, envia `web_search: true` o incluye la frase `Busca en internet` en el `prompt`.
 
 ### Crear conversacion
 
 ```http
 POST /api/tutor/conversations
 ```
-
-Ejemplo:
 
 ```bash
 curl -X POST http://localhost:3000/api/tutor/conversations \
@@ -229,8 +205,6 @@ Respuesta:
 POST /api/tutor/conversations/:conversationId/messages
 ```
 
-Ejemplo:
-
 ```bash
 curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/messages \
   -H "Content-Type: application/json" \
@@ -241,90 +215,27 @@ curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a
   }'
 ```
 
-Respuesta:
+### Generar contenido en una conversacion
 
-```json
-{
-  "conversation_id": "66583f4c2a0d4b98e1e0a111",
-  "respuesta": "<section>...</section>",
-  "web_search_used": false,
-  "fuentes": []
-}
-```
-
-### Generar resumen en una conversacion
+Resumen:
 
 ```http
 POST /api/tutor/conversations/:conversationId/summaries
 ```
 
-Genera un resumen desde los parametros de una plantilla del frontend, guarda el
-submit como mensaje de usuario y devuelve el HTML como mensaje del asistente.
-Este endpoint puede usar busqueda web opcional con `web_search: true`.
-
-```bash
-curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/summaries \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -H "x-user-id: usuario_123" \
-  -d '{
-    "tema": "Prevencion de riesgos laborales",
-    "extension": "medio",
-    "formato": "puntos_clave",
-    "enfoque": "para_estudiar",
-    "indicaciones_adicionales": "Incluye ejemplos practicos",
-    "web_search": false
-  }'
-```
-
-### Generar examen en una conversacion
+Examen:
 
 ```http
 POST /api/tutor/conversations/:conversationId/exams
 ```
 
-Genera un examen basado en la documentacion del curso. No acepta `web_search`.
-
-```bash
-curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/exams \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -H "x-user-id: usuario_123" \
-  -d '{
-    "tema": "Cobro en caja",
-    "tipo": "mixto",
-    "numero_preguntas_test": 5,
-    "numero_preguntas_abiertas": 2,
-    "nivel_dificultad": "intermedio",
-    "indicaciones_adicionales": "No incluyas soluciones"
-  }'
-```
-
-### Generar ejercicio en una conversacion
+Ejercicio:
 
 ```http
 POST /api/tutor/conversations/:conversationId/exercises
 ```
 
-Genera un ejercicio basado en la documentacion del curso. No acepta
-`web_search`.
-
-```bash
-curl -X POST http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/exercises \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -H "x-user-id: usuario_123" \
-  -d '{
-    "tema": "Atencion al cliente",
-    "tipo": "caso_aplicado",
-    "nivel_dificultad": "basico",
-    "apartados": 3,
-    "incluir_solucion": true,
-    "indicaciones_adicionales": "Plantea una situacion realista"
-  }'
-```
-
-Los tres endpoints devuelven el mismo contrato:
+Los tres endpoints devuelven un fragmento HTML listo para insertar en el chat:
 
 ```json
 {
@@ -336,9 +247,7 @@ Los tres endpoints devuelven el mismo contrato:
 }
 ```
 
-`respuesta` es un fragmento HTML valido preparado para insertarse directamente
-en el chat del frontend. No incluye `<html>`, `<head>`, `<body>`, scripts ni
-estilos inline.
+`summaries` puede usar `web_search: true`. `exams` y `exercises` se basan solo en la documentacion del curso.
 
 ### Listar conversaciones
 
@@ -346,8 +255,6 @@ estilos inline.
 GET /api/tutor/conversations
 GET /api/tutor/conversations?course_id=790
 ```
-
-Ejemplo:
 
 ```bash
 curl http://localhost:3000/api/tutor/conversations \
@@ -361,21 +268,11 @@ curl http://localhost:3000/api/tutor/conversations \
 GET /api/tutor/conversations/:conversationId/messages
 ```
 
-Ejemplo:
-
-```bash
-curl http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111/messages \
-  -H "Authorization: Bearer <token>" \
-  -H "x-user-id: usuario_123"
-```
-
 ### Renombrar conversacion
 
 ```http
 PATCH /api/tutor/conversations/:conversationId
 ```
-
-Ejemplo:
 
 ```bash
 curl -X PATCH http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111 \
@@ -393,21 +290,17 @@ curl -X PATCH http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0
 DELETE /api/tutor/conversations/:conversationId
 ```
 
-Ejemplo:
-
-```bash
-curl -X DELETE http://localhost:3000/api/tutor/conversations/66583f4c2a0d4b98e1e0a111 \
-  -H "Authorization: Bearer <token>" \
-  -H "x-user-id: usuario_123"
-```
-
 Si la operacion se completa correctamente, devuelve `204 No Content`.
 
-## Gestion administrativa de Qdrant
+## Administracion de Qdrant
 
-Los endpoints bajo `/api/tutor/qdrant` usan el mismo token/API key que el resto
-de la API. Permiten preparar una UI de gestion para listar, crear, cargar y
-borrar colecciones/ficheros de Qdrant.
+Los endpoints administrativos se montan bajo:
+
+```text
+/api/tutor/qdrant
+```
+
+Usan el mismo token que el resto de la API.
 
 ### Listar colecciones
 
@@ -437,8 +330,7 @@ Respuesta:
 POST /api/tutor/qdrant/collections/sync
 ```
 
-Crea metadata local para colecciones ya existentes en Qdrant y agrupa ficheros
-legacy usando `payload.file_name`.
+Crea metadata local para colecciones existentes en Qdrant.
 
 ### Crear coleccion
 
@@ -455,15 +347,23 @@ POST /api/tutor/qdrant/collections
 }
 ```
 
+### Ver detalle de una coleccion
+
+```http
+GET /api/tutor/qdrant/collections/:collectionName
+```
+
 ### Listar ficheros de una coleccion
 
 ```http
-GET /api/tutor/qdrant/collections/vs_COMT013PO_790/files
+GET /api/tutor/qdrant/collections/:collectionName/files
 ```
 
 ### Subir ficheros
 
 Soporta `PDF`, `DOCX` y `TXT` mediante `multipart/form-data`.
+
+Un fichero:
 
 ```bash
 curl -X POST http://localhost:3000/api/tutor/qdrant/collections/vs_COMT013PO_790/files \
@@ -473,7 +373,7 @@ curl -X POST http://localhost:3000/api/tutor/qdrant/collections/vs_COMT013PO_790
   -F "curso=COMT013PO"
 ```
 
-Para varios ficheros:
+Varios ficheros:
 
 ```bash
 curl -X POST http://localhost:3000/api/tutor/qdrant/collections/vs_COMT013PO_790/files/batch \
@@ -481,19 +381,6 @@ curl -X POST http://localhost:3000/api/tutor/qdrant/collections/vs_COMT013PO_790
   -F "files=@manual.pdf" \
   -F "files=@guia.docx" \
   -F "replace_existing=true"
-```
-
-Ejemplo desde React:
-
-```js
-const formData = new FormData();
-files.forEach(file => formData.append('files', file));
-
-await fetch('/api/tutor/qdrant/collections/vs_COMT013PO_790/files/batch', {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${token}` },
-  body: formData
-});
 ```
 
 ### Borrar ficheros y colecciones
@@ -504,30 +391,29 @@ DELETE /api/tutor/qdrant/collections/:collectionName/files/by-name?file_name=man
 DELETE /api/tutor/qdrant/collections/:collectionName?confirm=true
 ```
 
-Las operaciones de subida y borrado invalidan la cache documental del tutor para
-que las respuestas posteriores usen el estado nuevo de Qdrant.
+Las operaciones de subida y borrado invalidan la cache documental del tutor para que las respuestas posteriores usen el estado actualizado de Qdrant.
 
 ## Validaciones principales
 
 - `course id`, `curso`, `vs_id_QDRANT` y `x-user-id` son obligatorios en los endpoints que los requieren.
-- `vs_id_QDRANT` debe ser el nombre exacto de la collection existente en Qdrant y admite letras, numeros, `_` y `-`, con maximo de 128 caracteres.
-- `x-user-id` admite letras, numeros, `_` y `-`, con maximo de 64 caracteres.
+- `vs_id_QDRANT` debe ser el nombre exacto de una coleccion existente en Qdrant.
+- `vs_id_QDRANT` admite letras, numeros, `_` y `-`, con un maximo de 128 caracteres.
+- `x-user-id` admite letras, numeros, `_` y `-`, con un maximo de 64 caracteres.
 - `prompt` no puede estar vacio y esta limitado por `MAX_PROMPT_LENGTH`.
 - `web_search`, cuando se envia, debe ser booleano.
 - `title` esta limitado por `MAX_CONVERSATION_TITLE_LENGTH`.
-- Si la collection indicada en `vs_id_QDRANT` no existe, esta mal escrita o Qdrant no permite consultarla, la API devuelve `400`.
+- Si la coleccion indicada no existe o Qdrant no permite consultarla, la API devuelve `400`.
 
 ## Seguridad operativa
 
-- Configura siempre `NODE_ENV=production` y el modo de autenticacion apropiado.
-- Despliega primero con `AUTH_MODE=legacy`, migra clientes con `AUTH_MODE=hybrid`
-  y retira `API_KEY` tras cambiar a `AUTH_MODE=jwt`.
-- Para rotar claves, anade primero el nuevo `kid`, empieza a emitir con el y
-  retira el anterior cuando sus tokens hayan expirado o hayan sido revocados.
-- Retirar un `kid` invalida inmediatamente todos sus tokens.
-- Ajusta `RATE_LIMIT_MAX`, `MAX_CONTEXT_CHARS`, `MAX_HISTORY_MESSAGES` y `QDRANT_MAX_SCROLL_POINTS` segun el coste aceptable por peticion.
+- Usa `NODE_ENV=production` en produccion.
+- Configura `CORS_ALLOWED_ORIGINS` con el origen exacto del frontend, sin ruta final.
 - No subas `.env` al repositorio. Usa `.env.example` como plantilla.
+- Migra clientes a `Authorization: Bearer <token>` y deja `AUTH_MODE=jwt` cuando todos lo usen.
+- Ajusta `RATE_LIMIT_MAX`, `MAX_CONTEXT_CHARS`, `MAX_HISTORY_MESSAGES` y `QDRANT_MAX_SCROLL_POINTS` segun el coste aceptable por peticion.
 
 ## Respuestas del tutor
 
-El tutor devuelve fragmentos HTML validos, no Markdown, y responde en el idioma de la consulta. Por defecto, las respuestas se basan exclusivamente en el contexto oficial recuperado desde Qdrant. Si se activa la busqueda web mediante `web_search: true` o la frase `Busca en internet`, Perplexity Sonar complementa ese contexto con informacion externa y la respuesta identifica sus fuentes.
+El tutor devuelve fragmentos HTML validos, no Markdown. No incluye `<html>`, `<head>`, `<body>`, scripts ni estilos inline.
+
+Por defecto, las respuestas se basan exclusivamente en el contexto oficial recuperado desde Qdrant. Si se activa la busqueda web con `web_search: true` o la frase `Busca en internet`, Perplexity Sonar complementa ese contexto con informacion externa y la respuesta incluye sus fuentes.
