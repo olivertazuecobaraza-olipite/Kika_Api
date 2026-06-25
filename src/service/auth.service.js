@@ -3,6 +3,9 @@ import { parseAuthConfig } from '../config/auth.js';
 import { findActiveLicense } from './license-registry.service.js';
 import { isTokenRevoked } from './token-revocation.service.js';
 
+const JWT_STATUS_CACHE_TTL_MS = Number(process.env.JWT_STATUS_CACHE_TTL_MS || 30_000);
+const jwtStatusCache = new Map();
+
 export class AuthenticationError extends Error {
     constructor(message = 'No autorizado.') {
         super(message);
@@ -31,12 +34,48 @@ const requireNumber = (payload, claim) => {
     }
 };
 
+export const clearJwtStatusCache = () => {
+    jwtStatusCache.clear();
+};
+
+const getCachedTokenStatus = async ({ jti, activeLicenseFinder, revocationChecker, cacheTokenStatus }) => {
+    const cacheEnabled = JWT_STATUS_CACHE_TTL_MS > 0
+        && (
+            cacheTokenStatus === true
+            || activeLicenseFinder === findActiveLicense && revocationChecker === isTokenRevoked
+        );
+    const now = Date.now();
+
+    if (cacheEnabled) {
+        const cached = jwtStatusCache.get(jti);
+        if (cached && now < cached.expiresAt) {
+            return cached.value;
+        }
+    }
+
+    const [activeLicense, revoked] = await Promise.all([
+        activeLicenseFinder(jti),
+        revocationChecker(jti)
+    ]);
+    const value = { activeLicense, revoked };
+
+    if (cacheEnabled) {
+        jwtStatusCache.set(jti, {
+            value,
+            expiresAt: now + JWT_STATUS_CACHE_TTL_MS
+        });
+    }
+
+    return value;
+};
+
 export const verifyApiToken = async (
     token,
     {
         config = parseAuthConfig(),
         activeLicenseFinder = findActiveLicense,
-        revocationChecker = isTokenRevoked
+        revocationChecker = isTokenRevoked,
+        cacheTokenStatus = false
     } = {}
 ) => {
     try {
@@ -73,14 +112,18 @@ export const verifyApiToken = async (
             throw new AuthenticationError();
         }
 
-        let activeLicense;
-        let revoked;
+        let tokenStatus;
         try {
-            activeLicense = await activeLicenseFinder(payload.jti);
-            revoked = await revocationChecker(payload.jti);
+            tokenStatus = await getCachedTokenStatus({
+                jti: payload.jti,
+                activeLicenseFinder,
+                revocationChecker,
+                cacheTokenStatus
+            });
         } catch {
             throw new AuthenticationUnavailableError();
         }
+        const { activeLicense, revoked } = tokenStatus;
         if (
             !activeLicense
             || activeLicense.subject !== payload.sub

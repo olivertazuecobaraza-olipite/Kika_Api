@@ -6,16 +6,40 @@ import { LANGUAGE_PROFILES } from './localization.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const INSTRUCTIONS_PATH = path.resolve(__dirname, '../../../../instrucciones.agente.txt');
+const INSTRUCTIONS_CACHE_TTL_MS = Number(process.env.INSTRUCTIONS_CACHE_TTL_MS || (
+    process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test' ? 1000 : 0
+));
 
-export const getInstructions = async ({ curso, context, responseLanguage = LANGUAGE_PROFILES.es }) => {
-    let instructionsTemplate;
+let cachedInstructionsTemplate = null;
+let cachedInstructionsAt = 0;
+
+export const clearInstructionsCache = () => {
+    cachedInstructionsTemplate = null;
+    cachedInstructionsAt = 0;
+};
+
+const readInstructionsTemplate = async () => {
+    const now = Date.now();
+    const cacheFresh = cachedInstructionsTemplate !== null
+        && (INSTRUCTIONS_CACHE_TTL_MS === 0 || now - cachedInstructionsAt < INSTRUCTIONS_CACHE_TTL_MS);
+
+    if (cacheFresh) {
+        return cachedInstructionsTemplate;
+    }
 
     try {
-        instructionsTemplate = await fs.readFile(INSTRUCTIONS_PATH, 'utf8');
+        cachedInstructionsTemplate = await fs.readFile(INSTRUCTIONS_PATH, 'utf8');
     } catch (err) {
         console.warn(`[TutorService] No se pudo leer el archivo de instrucciones en ${INSTRUCTIONS_PATH}. Usando fallback por defecto.`, err);
-        instructionsTemplate = 'Eres un tutor experto para el curso {curso}. Responde basandote estrictamente en este contexto:\n\n{context}';
+        cachedInstructionsTemplate = 'Eres un tutor experto para el curso {curso}. Responde basandote estrictamente en este contexto:\n\n{context}';
     }
+    cachedInstructionsAt = now;
+
+    return cachedInstructionsTemplate;
+};
+
+export const getInstructions = async ({ curso, context, responseLanguage = LANGUAGE_PROFILES.es }) => {
+    const instructionsTemplate = await readInstructionsTemplate();
 
     const instructions = instructionsTemplate
         .replace(/{curso}/g, curso)

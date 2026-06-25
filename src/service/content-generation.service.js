@@ -40,14 +40,18 @@ const serializeGenerationResponse = ({ conversationId, type, tutorResponse }) =>
     fuentes: tutorResponse.sources
 });
 
+const selectHistoryFields = (query) => typeof query.select === 'function'
+    ? query.select('role content createdAt')
+    : query;
+
 const getRecentHistory = async ({ MessageModel, conversationId, before }) => {
-    const previousMessages = await MessageModel.find({
+    const query = MessageModel.find({
         conversationId,
         createdAt: { $lt: before }
     })
         .sort({ createdAt: -1 })
-        .limit(MAX_HISTORY_MESSAGES)
-        .lean();
+        .limit(MAX_HISTORY_MESSAGES);
+    const previousMessages = await selectHistoryFields(query).lean();
 
     return previousMessages
         .reverse()

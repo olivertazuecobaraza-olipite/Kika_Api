@@ -12,7 +12,8 @@
     "test:integration": "node --test test/integration/*.test.js",
     "test:coverage": "node --experimental-test-coverage --test-coverage-lines=64 --test-coverage-branches=77 --test-coverage-functions=62 --test test/*.test.js",
     "test:smoke": "node --test test/smoke/*.test.js",
-    "test:all": "corepack pnpm run check && corepack pnpm run test:unit && corepack pnpm run test:integration"
+    "test:all": "corepack pnpm run check && corepack pnpm run test:unit && corepack pnpm run test:integration",
+    "benchmark:perf": "node scripts/benchmark-performance.js"
   },
   "keywords": [],
   "author": "",

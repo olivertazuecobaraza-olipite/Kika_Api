@@ -7,8 +7,13 @@ import { getWebInstructions } from './_internal/instructions.js';
 import { createPublicError } from './_internal/public-error.js';
 
 const PERPLEXITY_MODEL = process.env.PERPLEXITY_MODEL || 'sonar';
+const PERPLEXITY_TIMEOUT_MS = Number(process.env.PERPLEXITY_TIMEOUT_MS || process.env.OPENAI_TIMEOUT_MS || 0);
 const WEB_SEARCH_NOT_CONFIGURED_MESSAGE = 'La busqueda en internet no esta configurada.';
 const WEB_SEARCH_UNAVAILABLE_MESSAGE = 'La busqueda en internet no esta disponible en este momento.';
+
+const getPerplexityRequestOptions = () => PERPLEXITY_TIMEOUT_MS > 0
+    ? { timeout: PERPLEXITY_TIMEOUT_MS }
+    : undefined;
 
 export const getWebResponse = async ({
     curso,
@@ -34,7 +39,7 @@ export const getWebResponse = async ({
                 ...history,
                 { role: 'user', content: prompt }
             ]
-        });
+        }, getPerplexityRequestOptions());
         const sources = normalizeWebSources({
             citations: chatCompletion.citations,
             searchResults: chatCompletion.search_results

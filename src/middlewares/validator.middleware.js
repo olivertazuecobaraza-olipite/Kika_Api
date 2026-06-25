@@ -1,6 +1,7 @@
 // src/middlewares/validator.middleware.js
 import { body, header, param, query, validationResult } from 'express-validator';
 import mongoose from 'mongoose';
+import { logPerf, markDuration, nowMs } from '../utils/perf.js';
 
 const MAX_PROMPT_LENGTH = Number(process.env.MAX_PROMPT_LENGTH || 4000);
 const MAX_CONVERSATION_TITLE_LENGTH = Number(process.env.MAX_CONVERSATION_TITLE_LENGTH || 80);
@@ -112,8 +113,16 @@ const validateExamQuestionCounts = body().custom((_, { req }) => {
 });
 
 const sendValidationErrors = (req, res, next) => {
+    const start = nowMs();
     const errors = validationResult(req);
+    const duration = markDuration(start);
     if (!errors.isEmpty()) {
+        logPerf('perf.validation', {
+            path: req.originalUrl,
+            status: 400,
+            duration_ms: duration,
+            errors: errors.array().length
+        });
         return res.status(400).json({
             errors: errors.array().map(error => ({
                 field: error.path,
@@ -121,6 +130,7 @@ const sendValidationErrors = (req, res, next) => {
             }))
         });
     }
+    logPerf('perf.validation', { path: req.originalUrl, status: 'ok', duration_ms: duration });
     next();
 };
 

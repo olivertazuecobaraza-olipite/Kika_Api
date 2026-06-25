@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import jwt from 'jsonwebtoken';
-import { verifyApiToken, AuthenticationUnavailableError } from '../src/service/auth.service.js';
+import {
+    clearJwtStatusCache,
+    verifyApiToken,
+    AuthenticationUnavailableError
+} from '../src/service/auth.service.js';
 
 const createKeyPair = () => generateKeyPairSync('rsa', {
     modulusLength: 2048,
@@ -156,4 +160,35 @@ test('rechaza tokens firmados pero no registrados o con registro incoherente', a
             expiresAt: new Date((now + 7200) * 1000)
         })
     }));
+});
+
+test('cachea brevemente el estado JWT sin cambiar la respuesta autenticada', async () => {
+    clearJwtStatusCache();
+    let licenseLookups = 0;
+    let revocationLookups = 0;
+    const token = sign({ payload: { jti: `cached-token-${Date.now()}` } });
+    const options = {
+        config,
+        cacheTokenStatus: true,
+        activeLicenseFinder: async () => {
+            licenseLookups += 1;
+            return {
+                subject: 'app-campus',
+                keyId: 'primary',
+                expiresAt: new Date((now + 3600) * 1000)
+            };
+        },
+        revocationChecker: async () => {
+            revocationLookups += 1;
+            return false;
+        }
+    };
+
+    const first = await verifyApiToken(token, options);
+    const second = await verifyApiToken(token, options);
+
+    assert.deepEqual(second, first);
+    assert.equal(licenseLookups, 1);
+    assert.equal(revocationLookups, 1);
+    clearJwtStatusCache();
 });

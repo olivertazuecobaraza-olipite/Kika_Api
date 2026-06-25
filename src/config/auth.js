@@ -103,3 +103,32 @@ export const parseAuthConfig = (environment = process.env) => {
 
     return config;
 };
+
+let cachedEnvironmentFingerprint = null;
+let cachedAuthConfig = null;
+
+const getEnvironmentFingerprint = (environment) => JSON.stringify({
+    AUTH_MODE: environment.AUTH_MODE || '',
+    API_KEY: environment.API_KEY || '',
+    JWT_MAX_TTL_SECONDS: environment.JWT_MAX_TTL_SECONDS || '',
+    JWT_CLOCK_TOLERANCE_SECONDS: environment.JWT_CLOCK_TOLERANCE_SECONDS || '',
+    JWT_ISSUER: environment.JWT_ISSUER || '',
+    JWT_AUDIENCE: environment.JWT_AUDIENCE || '',
+    JWT_PUBLIC_KEYS_JSON: environment.JWT_PUBLIC_KEYS_JSON || ''
+});
+
+export const clearAuthConfigCache = () => {
+    cachedEnvironmentFingerprint = null;
+    cachedAuthConfig = null;
+};
+
+export const getCachedAuthConfig = (environment = process.env) => {
+    const fingerprint = getEnvironmentFingerprint(environment);
+    if (cachedAuthConfig && cachedEnvironmentFingerprint === fingerprint) {
+        return cachedAuthConfig;
+    }
+
+    cachedAuthConfig = parseAuthConfig(environment);
+    cachedEnvironmentFingerprint = fingerprint;
+    return cachedAuthConfig;
+};

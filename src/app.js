@@ -6,11 +6,24 @@ import { auditAuthenticatedRequest } from './middlewares/auth-audit.middleware.j
 import { rateLimit } from './middlewares/rate-limit.middleware.js';
 import { securityHeaders } from './middlewares/security-headers.middleware.js';
 import { cors } from './middlewares/cors.middleware.js';
+import { logPerf, markDuration, nowMs } from './utils/perf.js';
 
 export const createApp = () => {
     const app = express();
 
     app.disable('x-powered-by');
+    app.use((req, res, next) => {
+        const start = nowMs();
+        res.on('finish', () => {
+            logPerf('perf.request', {
+                method: req.method,
+                path: req.originalUrl,
+                status: res.statusCode,
+                duration_ms: markDuration(start)
+            });
+        });
+        next();
+    });
     app.use(securityHeaders);
     app.use(cors);
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '32kb' }));

@@ -24,6 +24,10 @@ const {
     normalizeAssistantHtml,
     shouldUseWebSearch
 } = await import('../src/service/tutor.service.js');
+const {
+    clearInstructionsCache,
+    getInstructions
+} = await import('../src/use-cases/tutor/_internal/instructions.js');
 
 test('compacta HTML conversacional sin alterar contenido semantico', () => {
     assert.equal(
@@ -483,4 +487,17 @@ test('genera respuesta segura cuando no hay contexto suficiente', () => {
     assert.match(response, /capital de Francia/);
     assert.match(response, /&lt;test&gt;/);
     assert.doesNotMatch(response, /Paris/i);
+});
+
+test('las instrucciones cacheadas conservan sustitucion de curso y contexto', async () => {
+    clearInstructionsCache();
+    const instructions = await getInstructions({
+        curso: 'CURSO_CACHE',
+        context: 'CONTEXTO_CACHE',
+        responseLanguage: detectResponseLanguage('hola')
+    });
+
+    assert.match(instructions, /CURSO_CACHE/);
+    assert.match(instructions, /CONTEXTO_CACHE/);
+    clearInstructionsCache();
 });

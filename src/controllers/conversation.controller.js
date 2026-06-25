@@ -17,6 +17,10 @@ const createErrorHtml = (message) => `<section><h2>Error</h2><p>${escapeHtml(mes
 
 const getUserId = (req) => req.get('x-user-id');
 
+const selectHistoryFields = (query) => typeof query.select === 'function'
+    ? query.select('role content createdAt')
+    : query;
+
 const serializeConversationCore = (conversation) => ({
     conversation_id: conversation._id.toString(),
     title: conversation.title,
@@ -118,13 +122,13 @@ export const sendConversationMessage = async (req, res) => {
     });
 
     try {
-        const previousMessages = await Message.find({
+        const previousMessagesQuery = Message.find({
             conversationId: conversation._id,
             createdAt: { $lt: userMessage.createdAt }
         })
             .sort({ createdAt: -1 })
-            .limit(MAX_HISTORY_MESSAGES)
-            .lean();
+            .limit(MAX_HISTORY_MESSAGES);
+        const previousMessages = await selectHistoryFields(previousMessagesQuery).lean();
 
         const history = previousMessages
             .reverse()

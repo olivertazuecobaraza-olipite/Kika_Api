@@ -14,10 +14,17 @@ import { isAmbiguousDocumentQuestion } from './isAmbiguousDocumentQuestion.use-c
 import { isStructuralQuestion } from './isStructuralQuestion.use-case.js';
 import { normalizeAssistantHtml } from './normalizeAssistantHtml.use-case.js';
 import { shouldUseWebSearch } from './shouldUseWebSearch.use-case.js';
-import { getCollectionCache, setCollectionCache } from './_internal/collection-cache.js';
+import {
+    deleteCollectionLoad,
+    getCollectionCache,
+    getCollectionLoad,
+    setCollectionCache,
+    setCollectionLoad
+} from './_internal/collection-cache.js';
 import { getInstructions } from './_internal/instructions.js';
 import { escapeHtml, getLocalizedCopy, localizedCopy } from './_internal/localization.js';
 import { createPublicError } from './_internal/public-error.js';
+import { createPerfTimer, isPerfDebugEnabled } from '../../utils/perf.js';
 
 const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS || 10 * 60 * 1000);
 const MAX_SCROLL_POINTS = Number(process.env.QDRANT_MAX_SCROLL_POINTS || 5000);
@@ -27,6 +34,8 @@ const VECTOR_LIMIT = Number(process.env.QDRANT_VECTOR_LIMIT || 8);
 const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini';
 const EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small';
 const RAG_DEBUG = /^true$/i.test(process.env.RAG_DEBUG || '');
+const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 0);
+const QDRANT_TIMEOUT_MS = Number(process.env.QDRANT_TIMEOUT_MS || 0);
 const QDRANT_COLLECTION_ERROR_MESSAGE = 'La coleccion de Qdrant indicada no existe o no esta disponible.';
 const EMPTY_WEB_SEARCH_PROMPT_MESSAGE = 'La consulta no puede contener unicamente la instruccion de buscar en internet.';
 const WEB_SEARCH_NOT_CONFIGURED_MESSAGE = 'La busqueda en internet no esta configurada.';
@@ -65,9 +74,38 @@ const createQdrantCollectionError = (vsIdQdrant, cause) => {
     return error;
 };
 
+const withTimeout = async (promise, timeoutMs, name) => {
+    if (!timeoutMs || timeoutMs <= 0) return promise;
+
+    let timeoutId;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timeoutId = setTimeout(() => {
+                    const error = new Error(`${name} timeout`);
+                    error.name = 'ProviderTimeoutError';
+                    error.status = 504;
+                    reject(error);
+                }, timeoutMs);
+            })
+        ]);
+    } finally {
+        clearTimeout(timeoutId);
+    }
+};
+
+const getOpenAiRequestOptions = () => OPENAI_TIMEOUT_MS > 0
+    ? { timeout: OPENAI_TIMEOUT_MS }
+    : undefined;
+
 const searchQdrantCollection = async (vsIdQdrant, options) => {
     try {
-        return await qdrant.search(vsIdQdrant, options);
+        return await withTimeout(
+            qdrant.search(vsIdQdrant, options),
+            QDRANT_TIMEOUT_MS,
+            'qdrant.search'
+        );
     } catch (err) {
         if (isMissingQdrantCollectionError(err)) {
             throw createQdrantCollectionError(vsIdQdrant, err);
@@ -169,13 +207,13 @@ const getLexicalContextChunks = ({ chunks, prompt, limit = LEXICAL_LIMIT }) => {
 
     return chunks
         .map(chunk => {
-            const searchableText = normalizeText(`${chunk.fileName} ${chunk.text}`)
+            const searchableText = chunk.searchableText || normalizeText(`${chunk.fileName} ${chunk.text}`)
                 .toLowerCase()
                 .normalize('NFD')
                 .replace(/[\u0300-\u036f]/g, '');
             const matchedTerms = terms.filter(term => searchableText.includes(term)).length;
             const score = matchedTerms
-                + (isLikelyReferenceFile(chunk.fileName) ? 0.25 : 0);
+                + (chunk.referenceFile ? 0.25 : 0);
             return { ...chunk, score, matchedTerms, termCount: terms.length };
         })
         .filter(chunk => chunk.matchedTerms > 0)
@@ -183,22 +221,20 @@ const getLexicalContextChunks = ({ chunks, prompt, limit = LEXICAL_LIMIT }) => {
         .slice(0, limit);
 };
 
-const getCollectionData = async (vsIdQdrant) => {
-    const cached = getCollectionCache(vsIdQdrant);
-    const now = Date.now();
-    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
-        return cached.data;
-    }
-
+const loadCollectionData = async (vsIdQdrant) => {
     let offset = undefined;
     const allPoints = [];
     do {
-        const response = await qdrant.scroll(vsIdQdrant, {
-            limit: 100,
-            with_payload: true,
-            with_vector: false,
-            offset
-        });
+        const response = await withTimeout(
+            qdrant.scroll(vsIdQdrant, {
+                limit: 100,
+                with_payload: true,
+                with_vector: false,
+                offset
+            }),
+            QDRANT_TIMEOUT_MS,
+            'qdrant.scroll'
+        );
 
         allPoints.push(...response.points);
         offset = response.next_page_offset;
@@ -221,7 +257,12 @@ const getCollectionData = async (vsIdQdrant) => {
         chunks.push({
             id: point.id,
             fileName,
-            text
+            text,
+            referenceFile: isLikelyReferenceFile(fileName),
+            searchableText: normalizeText(`${fileName} ${text}`)
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
         });
 
         if (pageMatch) {
@@ -268,13 +309,35 @@ const getCollectionData = async (vsIdQdrant) => {
     });
 
     const catalog = extractTrainingCatalog(chunks);
-    const data = { pages, toc, chunks, files, catalog };
-    setCollectionCache(vsIdQdrant, { timestamp: now, data });
-
-    return data;
+    return { pages, toc, chunks, files, catalog };
 };
 
-const getExplicitContextPages = async ({ vsIdQdrant, prompt }) => {
+const getCollectionData = async (vsIdQdrant) => {
+    const cached = getCollectionCache(vsIdQdrant);
+    const now = Date.now();
+    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+        return cached.data;
+    }
+
+    const existingLoad = getCollectionLoad(vsIdQdrant);
+    if (existingLoad) {
+        return existingLoad;
+    }
+
+    const load = loadCollectionData(vsIdQdrant)
+        .then(data => {
+            setCollectionCache(vsIdQdrant, { timestamp: Date.now(), data });
+            return data;
+        })
+        .finally(() => {
+            deleteCollectionLoad(vsIdQdrant);
+        });
+    setCollectionLoad(vsIdQdrant, load);
+
+    return load;
+};
+
+const getExplicitContextPages = async ({ vsIdQdrant, prompt, collectionData = null }) => {
     const pageMatch = prompt.match(/(?:p[a\u00e1]g(?:ina)?|pg\.?|p\.)\s*(\d+)\b/i);
     const sectionMatch = prompt.match(/(?:cap[\u00ed\u00edi]tulo|tema|punto|secci[o\u00f3]n|unidad|apartado|m[o\u00f3]dulo|bloque|parte)\s*(\d+(?:\.\d+)*)\b/i)
         || prompt.match(/\b(\d+\.\d+(?:\.\d+)*)\b/);
@@ -283,7 +346,7 @@ const getExplicitContextPages = async ({ vsIdQdrant, prompt }) => {
         return [];
     }
 
-    const { pages, toc } = await getCollectionData(vsIdQdrant);
+    const { pages, toc } = collectionData || await getCollectionData(vsIdQdrant);
 
     if (pageMatch) {
         const pageNum = parseInt(pageMatch[1], 10);
@@ -291,7 +354,9 @@ const getExplicitContextPages = async ({ vsIdQdrant, prompt }) => {
         const pageEnd = pageNum + 1;
         const explicitPages = pages.filter(page => page.pageNum >= pageStart && page.pageNum <= pageEnd);
 
-        console.log(`[TutorService] Recuperacion exacta por pagina ${pageNum}. Rango: ${pageStart}-${pageEnd}. Encontradas: ${explicitPages.length} pag(s).`);
+        if (RAG_DEBUG || isPerfDebugEnabled()) {
+            console.log(`[TutorService] Recuperacion exacta por pagina ${pageNum}. Rango: ${pageStart}-${pageEnd}. Encontradas: ${explicitPages.length} pag(s).`);
+        }
         return explicitPages;
     }
 
@@ -345,7 +410,9 @@ const getExplicitContextPages = async ({ vsIdQdrant, prompt }) => {
         ? pages.filter(page => page.fileName === matchedHeading.file && page.pageNum >= pageStart && page.pageNum <= pageEnd)
         : pages.filter(page => page.fileName === matchedHeading.file && page.pageNum >= pageStart && page.pageNum <= pageStart + 1);
 
-    console.log(`[TutorService] Recuperacion exacta por seccion ${sectionNum}. Rango: ${pageStart}-${pageEnd}. Encontradas: ${explicitPages.length} pag(s).`);
+    if (RAG_DEBUG || isPerfDebugEnabled()) {
+        console.log(`[TutorService] Recuperacion exacta por seccion ${sectionNum}. Rango: ${pageStart}-${pageEnd}. Encontradas: ${explicitPages.length} pag(s).`);
+    }
     return explicitPages;
 };
 
@@ -391,6 +458,7 @@ const buildContext = ({ collectionSummaryContext = '', structuralContext = '', e
 };
 
 export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = [], webSearch = false }) => {
+    const perf = createPerfTimer('perf.tutor_response', { collection: vsIdQdrant, web_search_requested: webSearch === true });
     const webSearchUsed = shouldUseWebSearch({ prompt, webSearch });
     const cleanPrompt = cleanWebSearchTrigger(prompt);
     const responseLanguage = detectResponseLanguage(cleanPrompt || prompt);
@@ -452,24 +520,33 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
         }
     }
 
-    const embeddingResponse = await openai.embeddings.create({
+    const collectionDataResultPromise = perf.track('collection_load', async () => getCollectionData(vsIdQdrant))
+        .then(data => ({ data }))
+        .catch(error => ({ error }));
+
+    const embeddingResponse = await perf.track('embedding', async () => openai.embeddings.create({
         model: EMBEDDING_MODEL,
         input: cleanPrompt
-    });
+    }, getOpenAiRequestOptions()));
     const [{ embedding }] = embeddingResponse.data;
 
-    const searchResult = await searchQdrantCollection(vsIdQdrant, {
+    const searchResult = await perf.track('qdrant_search', async () => searchQdrantCollection(vsIdQdrant, {
         vector: embedding,
         limit: VECTOR_LIMIT
-    });
+    }));
 
     let collectionData = null;
     let collectionSummaryContext = '';
     let structuralContext = '';
     let lexicalChunks = [];
     const structuralQuestion = isStructuralQuestion(cleanPrompt);
-    try {
-        collectionData = await getCollectionData(vsIdQdrant);
+    const collectionDataResult = await collectionDataResultPromise;
+    if (collectionDataResult.data) {
+        collectionData = collectionDataResult.data;
+    } else {
+        console.error('[TutorService] Error al construir memoria estructural de la coleccion:', collectionDataResult.error);
+    }
+    if (collectionData) {
         collectionSummaryContext = buildCollectionSummaryContext({
             files: collectionData.files,
             catalog: collectionData.catalog
@@ -485,13 +562,15 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
                 catalog: collectionData.catalog
             });
         }
-    } catch (err) {
-        console.error('[TutorService] Error al construir memoria estructural de la coleccion:', err);
     }
 
     let explicitPages = [];
     try {
-        explicitPages = await getExplicitContextPages({ vsIdQdrant, prompt: cleanPrompt });
+        explicitPages = await perf.track('explicit_context', async () => getExplicitContextPages({
+            vsIdQdrant,
+            prompt: cleanPrompt,
+            collectionData
+        }));
     } catch (err) {
         console.error('[TutorService] Error al intentar recuperar contexto determinista:', err);
     }
@@ -539,26 +618,28 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
         }
     }
 
-    const context = buildContext({
+    const context = await perf.track('context_build', async () => buildContext({
         collectionSummaryContext,
         structuralContext,
         explicitPages,
         lexicalChunks,
         searchResult
-    });
+    }));
     const normalizedHistory = normalizeHistory(history);
     if (webSearchUsed) {
-        return getWebResponse({
+        const response = await perf.track('llm', async () => getWebResponse({
             curso,
             context,
             prompt: cleanPrompt,
             history: normalizedHistory,
             responseLanguage
-        });
+        }));
+        perf.flush({ web_search_used: true });
+        return response;
     }
 
     const systemInstruction = await getInstructions({ curso, context, responseLanguage });
-    const chatCompletion = await openai.chat.completions.create({
+    const chatCompletion = await perf.track('llm', async () => openai.chat.completions.create({
         model: CHAT_MODEL,
         messages: [
             { role: 'system', content: systemInstruction },
@@ -566,11 +647,13 @@ export const getTutorResponse = async ({ curso, vsIdQdrant, prompt, history = []
             { role: 'user', content: cleanPrompt }
         ],
         temperature: 0.4
-    });
+    }, getOpenAiRequestOptions()));
 
-    return {
+    const response = {
         respuesta: normalizeAssistantHtml(chatCompletion.choices[0].message.content),
         webSearchUsed: false,
         sources: []
     };
+    perf.flush({ web_search_used: false });
+    return response;
 };
