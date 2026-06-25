@@ -123,6 +123,50 @@ pnpm run test:all
 
 La configuracion de MongoDB/Qdrant para pruebas, la matriz automatizada y la checklist manual del frontend estan documentadas en [TESTING.md](./TESTING.md).
 
+## Use-cases
+
+Los casos de uso estan en `src/use-cases` y separan la logica de negocio de controladores, rutas y servicios externos.
+
+### Tutor
+
+- `detectResponseLanguage`: detecta el idioma de la consulta para responder de forma coherente.
+- `cleanWebSearchTrigger`: elimina del prompt la frase de activacion de busqueda web cuando aplica.
+- `shouldUseWebSearch`: decide si una peticion debe complementar la respuesta con Perplexity Sonar.
+- `normalizeWebSources`: normaliza las fuentes devueltas por la busqueda web.
+- `appendWebSourcesHtml`: agrega las fuentes web al HTML final de la respuesta.
+- `extractTrainingCatalog`: extrae informacion estructural del catalogo o contenido formativo disponible.
+- `isStructuralQuestion`: identifica preguntas sobre estructura del curso, temario o documentacion.
+- `buildStructuralContext`: construye contexto estructural de una coleccion documental.
+- `buildCollectionSummaryContext`: genera un resumen minimo de la coleccion para orientar respuestas generales.
+- `createInsufficientContextResponse`: crea una respuesta controlada cuando no hay contexto documental suficiente.
+- `createExternalKnowledgeResponse`: crea una respuesta cuando la consulta requiere conocimiento externo.
+- `classifyTutorPrompt`: clasifica la intencion del prompt antes de recuperar o generar la respuesta.
+- `isAmbiguousDocumentQuestion`: detecta preguntas ambiguas que no apuntan claramente a la documentacion.
+- `hasSufficientDocumentContext`: comprueba si el contexto recuperado permite responder con fundamento.
+- `invalidateCollectionCache`: invalida la cache documental de una coleccion tras cambios en Qdrant.
+- `getWebResponse`: genera una respuesta apoyada en busqueda web.
+- `getTutorResponse`: coordina el flujo principal del tutor documental con Qdrant y OpenAI.
+- `normalizeAssistantHtml`: limpia y normaliza el HTML generado por el asistente.
+
+### Qdrant admin
+
+- `normalizeCollectionName`: normaliza nombres de colecciones para usarlos de forma segura en Qdrant.
+- `normalizeUploadedFileName`: normaliza nombres de ficheros subidos.
+- `listQdrantCollectionsFromServer`: consulta las colecciones existentes directamente en Qdrant.
+- `collectionExistsInQdrant`: comprueba si una coleccion existe en el servidor Qdrant.
+- `listManagedCollections`: lista las colecciones gestionadas con metadata local y filtros.
+- `groupFilesFromPoints`: agrupa puntos de Qdrant por fichero para mostrar los documentos indexados.
+- `getCollection`: recupera el detalle de una coleccion gestionada.
+- `getCollectionFiles`: lista los ficheros asociados a una coleccion.
+- `syncCollections`: sincroniza colecciones existentes en Qdrant con la metadata local.
+- `createCollection`: crea una coleccion nueva en Qdrant y registra su metadata.
+- `chunkText`: divide texto extraido de documentos en fragmentos indexables.
+- `uploadSingleFile`: procesa e indexa un fichero en una coleccion.
+- `uploadMultipleFiles`: procesa e indexa varios ficheros en lote.
+- `deleteFileById`: elimina de Qdrant los puntos asociados a un fichero concreto.
+- `deleteFileByName`: elimina ficheros por nombre dentro de una coleccion.
+- `deleteCollection`: borra una coleccion de Qdrant y su metadata local.
+
 ## Endpoints
 
 La API se monta bajo:
