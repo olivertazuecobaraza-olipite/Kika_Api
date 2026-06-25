@@ -84,15 +84,13 @@ La API permite tres modos de autenticacion durante una migracion:
 - `hybrid`: acepta `Authorization: Bearer <token>` y temporalmente `x-api-key`.
 - `jwt`: acepta solo `Authorization: Bearer <token>`.
 
-El modo recomendado para clientes nuevos es usar siempre `Authorization: Bearer <token>`.
-
 Los endpoints conversacionales requieren ademas la cabecera:
 
 ```http
 x-user-id: usuario_123
 ```
 
-`Authorization` identifica al cliente que consume la API. `x-user-id` identifica al usuario final y separa sus conversaciones.
+`Authorization` identifica al usuario que consume la API. `x-user-id` identifica al usuario final y separa sus conversaciones.
 
 ## Ejecucion
 
