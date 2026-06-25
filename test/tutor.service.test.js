@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 process.env.OPENAI_API_KEY ||= 'test-openai-api-key';
 
+const { openai } = await import('../src/config/openai.js');
+const { qdrant } = await import('../src/config/qdrant.js');
+
 const {
     appendWebSourcesHtml,
     buildCollectionSummaryContext,
@@ -182,8 +185,22 @@ test('clasifica smalltalk, ayuda, identidad, documental y conocimiento externo',
     assert.equal(classifyTutorPrompt('what can you do?'), 'help');
     assert.equal(classifyTutorPrompt('what can u do?'), 'help');
     assert.equal(classifyTutorPrompt('como te uso?'), 'help');
+    assert.equal(classifyTutorPrompt('Que cosas puedes hacer'), 'help');
+    assert.equal(classifyTutorPrompt('qué puedes hacer?'), 'help');
+    assert.equal(classifyTutorPrompt('en que me puedes ayudar'), 'help');
+    assert.equal(classifyTutorPrompt('Con que conocimientos cuentas?'), 'help');
+    assert.equal(classifyTutorPrompt('qué conocimientos tienes'), 'help');
+    assert.equal(classifyTutorPrompt('con qué información cuentas'), 'help');
+    assert.equal(classifyTutorPrompt('gracias'), 'smalltalk');
+    assert.equal(classifyTutorPrompt('hola'), 'smalltalk');
+    assert.equal(classifyTutorPrompt('buenas'), 'smalltalk');
+    assert.equal(classifyTutorPrompt('adios'), 'smalltalk');
     assert.equal(classifyTutorPrompt('what is the capital of France?'), 'external_knowledge');
+    assert.equal(classifyTutorPrompt('capital de Francia'), 'external_knowledge');
+    assert.equal(classifyTutorPrompt('clima hoy'), 'external_knowledge');
+    assert.equal(classifyTutorPrompt('noticias'), 'external_knowledge');
     assert.equal(classifyTutorPrompt('explica el modulo 1'), 'course_documentary');
+    assert.equal(classifyTutorPrompt('resumen del tema 2'), 'course_documentary');
     assert.equal(classifyTutorPrompt('explain module 1'), 'course_documentary');
     assert.equal(classifyTutorPrompt('explica el módulo 1'), 'course_documentary');
     assert.equal(classifyTutorPrompt('eso'), 'ambiguous');
@@ -211,7 +228,7 @@ test('responde smalltalk sin consultar embeddings ni Qdrant', async () => {
 
     assert.equal(response.webSearchUsed, false);
     assert.deepEqual(response.sources, []);
-    assert.match(response.respuesta, /I'm here and ready/);
+    assert.match(response.respuesta, /I can chat briefly/);
     assert.doesNotMatch(response.respuesta, /Informacion no disponible/);
 });
 
@@ -232,12 +249,26 @@ test('responde ayuda informal sin consultar embeddings ni Qdrant', async () => {
     const response = await getTutorResponse({
         curso: 'curso',
         vsIdQdrant: 'collection',
-        prompt: 'como te uso?'
+        prompt: 'Que cosas puedes hacer'
     });
 
     assert.equal(response.webSearchUsed, false);
     assert.deepEqual(response.sources, []);
     assert.match(response.respuesta, /Como puedo ayudar/);
+    assert.doesNotMatch(response.respuesta, /Informacion no disponible/);
+});
+
+test('mantiene conversacion breve sin consultar embeddings ni Qdrant', async () => {
+    const response = await getTutorResponse({
+        curso: 'curso',
+        vsIdQdrant: 'collection',
+        prompt: 'gracias'
+    });
+
+    assert.equal(response.webSearchUsed, false);
+    assert.deepEqual(response.sources, []);
+    assert.match(response.respuesta, /Listo para ayudar/);
+    assert.match(response.respuesta, /conversar brevemente/);
     assert.doesNotMatch(response.respuesta, /Informacion no disponible/);
 });
 
@@ -263,6 +294,51 @@ test('bloquea conocimiento externo sin busqueda web antes del RAG', async () => 
     assert.equal(response.webSearchUsed, false);
     assert.match(response.respuesta, /Outside the available documentation/);
     assert.doesNotMatch(response.respuesta, /Paris/i);
+});
+
+test('no bloquea una consulta documental aunque el contexto recuperado sea insuficiente', async () => {
+    const originalEmbeddingCreate = openai.embeddings.create;
+    const originalChatCreate = openai.chat.completions.create;
+    const originalSearch = qdrant.search;
+    const originalScroll = qdrant.scroll;
+
+    let chatCalled = false;
+    openai.embeddings.create = async () => ({
+        data: [{ embedding: [0.1, 0.2, 0.3] }]
+    });
+    qdrant.search = async () => ([{
+        id: 'weak-hit',
+        score: 0.1,
+        payload: { text: 'fragmento breve', file_name: 'manual.pdf' }
+    }]);
+    qdrant.scroll = async () => ({
+        points: [],
+        next_page_offset: undefined
+    });
+    openai.chat.completions.create = async () => {
+        chatCalled = true;
+        return {
+            choices: [{ message: { content: '<section><p>Respuesta del modelo con limite documental.</p></section>' } }]
+        };
+    };
+
+    try {
+        const response = await getTutorResponse({
+            curso: 'curso',
+            vsIdQdrant: 'empty-rag-test',
+            prompt: 'explica el modulo desconocido'
+        });
+
+        assert.equal(chatCalled, true);
+        assert.equal(response.webSearchUsed, false);
+        assert.match(response.respuesta, /Respuesta del modelo/);
+        assert.doesNotMatch(response.respuesta, /Informacion no disponible/);
+    } finally {
+        openai.embeddings.create = originalEmbeddingCreate;
+        openai.chat.completions.create = originalChatCreate;
+        qdrant.search = originalSearch;
+        qdrant.scroll = originalScroll;
+    }
 });
 
 test('detecta preguntas estructurales del curso', () => {
@@ -354,7 +430,7 @@ test('construye resumen minimo de coleccion para cualquier consulta documental',
     assert.match(context, /MEMORIA DOCUMENTAL DE LA COLECCION QDRANT/);
     assert.match(context, /ficha.pdf/);
     assert.match(context, /MF0001_2/);
-    assert.match(context, /historial solo ayuda/);
+    assert.match(context, /no debe bloquear la conversacion/);
 });
 
 test('evalua suficiencia documental sin contar solo el resumen de coleccion', () => {

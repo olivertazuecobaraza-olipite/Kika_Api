@@ -1,1 +1,1 @@
-export { normalizeCollectionName } from './qdrant-admin.core.js';
+export const normalizeCollectionName = (value) => String(value || '').trim();
