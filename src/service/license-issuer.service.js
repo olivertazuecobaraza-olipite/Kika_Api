@@ -37,6 +37,7 @@ export const generateLicenseToken = ({
     clientName,
     clientEmail,
     months,
+    neverExpires = false,
     issuer = process.env.JWT_ISSUER || 'kika-token-service',
     audience = process.env.JWT_AUDIENCE || 'kika-api',
     now = new Date(),
@@ -45,14 +46,25 @@ export const generateLicenseToken = ({
     if (!privateKey || !kid || !clientId || !clientName || !clientEmail || !issuer || !audience) {
         throw new Error('privateKey, kid, clientId, clientName, clientEmail, issuer y audience son obligatorios.');
     }
+    if (typeof neverExpires !== 'boolean') {
+        throw new Error('neverExpires debe ser booleano.');
+    }
+    const hasMonths = months !== undefined && months !== null;
+    if (neverExpires === hasMonths) {
+        throw new Error('Debe indicarse months o neverExpires, pero no ambos.');
+    }
 
-    const parsedMonths = parseLicenseMonths(months);
     const issuedAt = new Date(now);
-    const expiresAt = addCalendarMonths(issuedAt, parsedMonths);
     const issuedAtSeconds = Math.floor(issuedAt.getTime() / 1000);
-    const expiresAtSeconds = Math.floor(expiresAt.getTime() / 1000);
+    const expiresAt = neverExpires
+        ? null
+        : addCalendarMonths(issuedAt, parseLicenseMonths(months));
+    const payload = { sub: clientId, jti: tokenId, iat: issuedAtSeconds };
+    if (expiresAt) {
+        payload.exp = Math.floor(expiresAt.getTime() / 1000);
+    }
     const token = jwt.sign(
-        { sub: clientId, jti: tokenId, iat: issuedAtSeconds, exp: expiresAtSeconds },
+        payload,
         privateKey,
         {
             algorithm: 'RS256',

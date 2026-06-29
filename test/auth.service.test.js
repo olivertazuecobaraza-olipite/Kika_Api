@@ -78,6 +78,24 @@ test('acepta un JWT RS256 valido y expone la identidad autenticada', async () =>
     });
 });
 
+test('acepta un JWT permanente si el registro no tiene expiracion', async () => {
+    const token = sign({ payload: { exp: undefined } });
+    assert.deepEqual(await verify(token, {
+        activeLicenseFinder: async () => ({
+            subject: 'app-campus',
+            keyId: 'primary',
+            expiresAt: null
+        })
+    }), {
+        type: 'jwt',
+        subject: 'app-campus',
+        tokenId: 'token-id',
+        issuedAt: now,
+        expiresAt: null,
+        keyId: 'primary'
+    });
+});
+
 test('acepta una clave anterior mientras su kid siga configurado', async () => {
     const auth = await verify(sign({ privateKey: previousKeys.privateKey, kid: 'previous' }), {
         activeLicenseFinder: async () => ({
@@ -99,7 +117,7 @@ test('rechaza expiracion, kid, firma, audiencia y emisor invalidos', async () =>
 });
 
 test('rechaza tokens sin claims obligatorios o con TTL excesivo', async () => {
-    for (const claim of ['sub', 'jti', 'iat', 'exp']) {
+    for (const claim of ['sub', 'jti', 'iat']) {
         await assert.rejects(verify(sign({ payload: { [claim]: undefined } })));
     }
     await assert.rejects(verify(sign({ payload: { exp: now + 31622401 } })));
@@ -158,6 +176,20 @@ test('rechaza tokens firmados pero no registrados o con registro incoherente', a
             subject: 'app-campus',
             keyId: 'primary',
             expiresAt: new Date((now + 7200) * 1000)
+        })
+    }));
+    await assert.rejects(verify(sign({ payload: { exp: undefined } }), {
+        activeLicenseFinder: async () => ({
+            subject: 'app-campus',
+            keyId: 'primary',
+            expiresAt: new Date((now + 3600) * 1000)
+        })
+    }));
+    await assert.rejects(verify(sign(), {
+        activeLicenseFinder: async () => ({
+            subject: 'app-campus',
+            keyId: 'primary',
+            expiresAt: null
         })
     }));
 });

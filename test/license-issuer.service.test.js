@@ -51,6 +51,17 @@ test('genera JWT comercial sin guardar ni exponer la clave privada', () => {
     assert.equal(result.expiresAt.toISOString(), '2026-04-30T12:00:00.000Z');
 });
 
+test('genera JWT comercial permanente sin claim exp', () => {
+    const result = generateLicenseToken({ ...baseOptions, neverExpires: true });
+    const decoded = jwt.decode(result.token, { complete: true });
+    assert.equal(decoded.header.kid, 'primary');
+    assert.equal(decoded.payload.sub, 'cliente_academia_norte');
+    assert.equal(decoded.payload.jti, 'generated-id');
+    assert.equal(decoded.payload.iat, 1769860800);
+    assert.equal(Object.hasOwn(decoded.payload, 'exp'), false);
+    assert.equal(result.expiresAt, null);
+});
+
 test('registra la licencia y sustituye la anterior al renovar', async () => {
     const calls = [];
     const registry = {

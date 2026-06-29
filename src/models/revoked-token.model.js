@@ -3,7 +3,7 @@ import { Schema, model } from 'mongoose';
 const RevokedTokenSchema = new Schema({
     jti: { type: String, required: true },
     subject: { type: String, required: true },
-    expiresAt: { type: Date, required: true },
+    expiresAt: { type: Date, default: null },
     revokedAt: { type: Date, default: Date.now },
     reason: { type: String, default: '' }
 });

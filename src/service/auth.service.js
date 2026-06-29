@@ -101,13 +101,22 @@ export const verifyApiToken = async (
         requireString(payload, 'sub');
         requireString(payload, 'jti');
         requireNumber(payload, 'iat');
-        requireNumber(payload, 'exp');
+
+        const hasExp = Object.hasOwn(payload, 'exp');
+        if (hasExp) {
+            requireNumber(payload, 'exp');
+        }
 
         const now = Math.floor(Date.now() / 1000);
         if (
             payload.iat > now + config.clockToleranceSeconds
-            || payload.exp <= payload.iat
-            || payload.exp - payload.iat > config.maxTtlSeconds
+            || (
+                hasExp
+                && (
+                    payload.exp <= payload.iat
+                    || payload.exp - payload.iat > config.maxTtlSeconds
+                )
+            )
         ) {
             throw new AuthenticationError();
         }
@@ -124,11 +133,16 @@ export const verifyApiToken = async (
             throw new AuthenticationUnavailableError();
         }
         const { activeLicense, revoked } = tokenStatus;
+        const licenseNeverExpires = activeLicense?.expiresAt == null;
+        const tokenExpirationMatches = hasExp
+            ? !licenseNeverExpires
+                && Math.floor(new Date(activeLicense.expiresAt).getTime() / 1000) === payload.exp
+            : licenseNeverExpires;
         if (
             !activeLicense
             || activeLicense.subject !== payload.sub
             || activeLicense.keyId !== kid
-            || Math.floor(new Date(activeLicense.expiresAt).getTime() / 1000) !== payload.exp
+            || !tokenExpirationMatches
             || revoked
         ) {
             throw new AuthenticationError();
@@ -139,7 +153,7 @@ export const verifyApiToken = async (
             subject: payload.sub,
             tokenId: payload.jti,
             issuedAt: payload.iat,
-            expiresAt: payload.exp,
+            expiresAt: hasExp ? payload.exp : null,
             keyId: kid
         };
     } catch (error) {

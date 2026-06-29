@@ -7,7 +7,7 @@ const IssuedTokenSchema = new Schema({
     clientEmail: { type: String, required: true },
     keyId: { type: String, required: true },
     issuedAt: { type: Date, required: true },
-    expiresAt: { type: Date, required: true },
+    expiresAt: { type: Date, default: null },
     status: {
         type: String,
         enum: ['active', 'superseded', 'revoked'],
